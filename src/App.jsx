@@ -1,12 +1,4 @@
 import React, { useMemo, useState } from "react";
-import { CalendarDays, Search, RefreshCw, CheckCircle2, Clock3, Sparkles, ListChecks, CloudCog, BellRing } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Progress } from "@/components/ui/progress";
 
 const mockShows = [
   {
@@ -22,7 +14,7 @@ const mockShows = [
     upcoming: true,
     selected: true,
     synced: false,
-    image: "https://placehold.co/320x450?text=Anime+Poster",
+    image: "https://placehold.co/640x360?text=Anime+Poster",
     confidence: "High match",
   },
   {
@@ -38,7 +30,7 @@ const mockShows = [
     upcoming: true,
     selected: true,
     synced: true,
-    image: "https://placehold.co/320x450?text=Anime+Poster",
+    image: "https://placehold.co/640x360?text=Anime+Poster",
     confidence: "High match",
   },
   {
@@ -54,7 +46,7 @@ const mockShows = [
     upcoming: true,
     selected: false,
     synced: false,
-    image: "https://placehold.co/320x450?text=Anime+Poster",
+    image: "https://placehold.co/640x360?text=Anime+Poster",
     confidence: "Needs review",
   },
   {
@@ -70,45 +62,33 @@ const mockShows = [
     upcoming: true,
     selected: false,
     synced: false,
-    image: "https://placehold.co/320x450?text=Anime+Poster",
+    image: "https://placehold.co/640x360?text=Anime+Poster",
     confidence: "High match",
   },
 ];
 
-function Pill({ children }) {
-  return <Badge className="rounded-full px-3 py-1 text-xs">{children}</Badge>;
-}
-
-function StatCard({ icon: Icon, label, value, subtext }) {
+function StatCard({ label, value, subtext }) {
   return (
-    <Card className="rounded-2xl border-0 shadow-sm">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm text-slate-500">{label}</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p>
-            <p className="mt-1 text-xs text-slate-500">{subtext}</p>
-          </div>
-          <div className="rounded-2xl bg-slate-100 p-3">
-            <Icon className="h-5 w-5 text-slate-700" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <div className="stat-card">
+      <div className="stat-label">{label}</div>
+      <div className="stat-value">{value}</div>
+      <div className="stat-subtext">{subtext}</div>
+    </div>
   );
 }
 
-export default function AnimeCalendarSyncUI() {
+export default function App() {
   const [shows, setShows] = useState(mockShows);
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState("upcoming");
 
   const filtered = useMemo(() => {
     return shows.filter((show) => {
+      const q = query.toLowerCase();
       const matchesQuery =
-        show.title.toLowerCase().includes(query.toLowerCase()) ||
-        show.titleJp.toLowerCase().includes(query.toLowerCase()) ||
-        show.season.toLowerCase().includes(query.toLowerCase());
+        show.title.toLowerCase().includes(q) ||
+        show.titleJp.toLowerCase().includes(q) ||
+        show.season.toLowerCase().includes(q);
 
       const matchesTab =
         tab === "all"
@@ -127,270 +107,244 @@ export default function AnimeCalendarSyncUI() {
   const syncedCount = shows.filter((s) => s.synced).length;
   const queueCount = shows.filter((s) => s.selected && !s.synced).length;
 
-  const toggleSelected = (id) => {
+  function toggleSelected(id) {
     setShows((prev) =>
       prev.map((show) =>
         show.id === id ? { ...show, selected: !show.selected } : show
       )
     );
-  };
+  }
 
-  const markSelectedSynced = () => {
+  function markSelectedSynced() {
     setShows((prev) =>
       prev.map((show) =>
         show.selected ? { ...show, synced: true } : show
       )
     );
-  };
+  }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto max-w-7xl p-6 md:p-8">
-        <div className="grid gap-6 xl:grid-cols-[1.7fr_1fr]">
-          <div className="space-y-6">
-            <Card className="overflow-hidden rounded-[28px] border-0 shadow-sm">
-              <CardContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-7 text-white md:p-9">
-                <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-                  <div className="max-w-2xl">
-                    <div className="mb-3 flex flex-wrap gap-2">
-                      <Pill>Jikan planned list</Pill>
-                      <Pill>Upcoming anime</Pill>
-                      <Pill>Google Calendar sync</Pill>
-                    </div>
-                    <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
-                      Anime Calendar Sync
-                    </h1>
-                    <p className="mt-3 max-w-xl text-sm text-slate-300 md:text-base">
-                      A GitHub Pages control panel for pulling future shows from your planned list,
-                      reviewing matches, and syncing selected series into Google Calendar.
-                    </p>
-                  </div>
+    <div className="app-shell">
+      <div className="page-wrap">
+        <div className="main-grid">
+          <div className="left-column">
+            <section className="hero-card">
+              <div className="hero-tags">
+                <span className="pill">Jikan planned list</span>
+                <span className="pill">Upcoming anime</span>
+                <span className="pill">Google Calendar sync</span>
+              </div>
 
-                  <div className="flex flex-wrap gap-3">
-                    <Button className="rounded-2xl bg-white text-slate-900 hover:bg-slate-100">
-                      <RefreshCw className="mr-2 h-4 w-4" />
-                      Refresh from Jikan
-                    </Button>
-                    <Button className="rounded-2xl bg-blue-500 text-white hover:bg-blue-600" onClick={markSelectedSynced}>
-                      <CalendarDays className="mr-2 h-4 w-4" />
-                      Sync selected
-                    </Button>
-                  </div>
+              <div className="hero-top">
+                <div>
+                  <h1>Anime Calendar Sync</h1>
+                  <p className="hero-copy">
+                    A GitHub Pages control panel for pulling future shows from
+                    your planned list, reviewing matches, and syncing selected
+                    series into Google Calendar.
+                  </p>
                 </div>
-              </CardContent>
-            </Card>
 
-            <div className="grid gap-4 md:grid-cols-3">
+                <div className="hero-actions">
+                  <button className="button button-light">
+                    Refresh from Jikan
+                  </button>
+                  <button className="button button-primary" onClick={markSelectedSynced}>
+                    Sync selected
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="stats-grid">
               <StatCard
-                icon={ListChecks}
                 label="Shows selected"
                 value={selectedCount}
                 subtext="Currently queued for sync"
               />
               <StatCard
-                icon={CalendarDays}
                 label="Already synced"
                 value={syncedCount}
                 subtext="Mapped into Google Calendar"
               />
               <StatCard
-                icon={Clock3}
                 label="Pending jobs"
                 value={queueCount}
                 subtext="Ready for backend processing"
               />
-            </div>
+            </section>
 
-            <Card className="rounded-[28px] border-0 shadow-sm">
-              <CardContent className="p-5 md:p-6">
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <div className="relative w-full md:max-w-md">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <Input
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      placeholder="Search title, JP title, or season"
-                      className="rounded-2xl border-slate-200 bg-white pl-10"
-                    />
-                  </div>
+            <section className="panel">
+              <div className="toolbar">
+                <input
+                  className="search-input"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search title, JP title, or season"
+                />
 
-                  <Tabs value={tab} onValueChange={setTab} className="w-full md:w-auto">
-                    <TabsList className="grid w-full grid-cols-4 rounded-2xl bg-slate-100 md:w-[420px]">
-                      <TabsTrigger value="upcoming" className="rounded-2xl">Upcoming</TabsTrigger>
-                      <TabsTrigger value="selected" className="rounded-2xl">Selected</TabsTrigger>
-                      <TabsTrigger value="synced" className="rounded-2xl">Synced</TabsTrigger>
-                      <TabsTrigger value="all" className="rounded-2xl">All</TabsTrigger>
-                    </TabsList>
-                  </Tabs>
+                <div className="tab-row">
+                  <button
+                    className={tab === "upcoming" ? "tab active" : "tab"}
+                    onClick={() => setTab("upcoming")}
+                  >
+                    Upcoming
+                  </button>
+                  <button
+                    className={tab === "selected" ? "tab active" : "tab"}
+                    onClick={() => setTab("selected")}
+                  >
+                    Selected
+                  </button>
+                  <button
+                    className={tab === "synced" ? "tab active" : "tab"}
+                    onClick={() => setTab("synced")}
+                  >
+                    Synced
+                  </button>
+                  <button
+                    className={tab === "all" ? "tab active" : "tab"}
+                    onClick={() => setTab("all")}
+                  >
+                    All
+                  </button>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </section>
 
-            <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
+            <section className="cards-grid">
               {filtered.map((show) => (
-                <Card key={show.id} className="overflow-hidden rounded-[28px] border-0 shadow-sm">
-                  <div className="aspect-[16/9] w-full bg-slate-100">
-                    <img src={show.image} alt={show.title} className="h-full w-full object-cover" />
+                <article className="anime-card" key={show.id}>
+                  <img className="anime-image" src={show.image} alt={show.title} />
+
+                  <div className="anime-content">
+                    <div className="anime-header">
+                      <div>
+                        <h2>{show.title}</h2>
+                        <p className="jp-title">{show.titleJp}</p>
+                      </div>
+
+                      <span className={show.synced ? "status synced" : "status unsynced"}>
+                        {show.synced ? "Synced" : "Not synced"}
+                      </span>
+                    </div>
+
+                    <div className="pill-row">
+                      <span className="pill">{show.season}</span>
+                      <span className="pill">{show.episodes} eps</span>
+                      <span className="pill">{show.duration} min</span>
+                      <span className="pill">{show.confidence}</span>
+                    </div>
+
+                    <div className="info-box">
+                      <div className="info-row">
+                        <span>Premiere</span>
+                        <strong>{show.premiereDate}</strong>
+                      </div>
+                      <div className="info-row">
+                        <span>Broadcast</span>
+                        <strong>{show.broadcast}</strong>
+                      </div>
+                      <div className="info-row">
+                        <span>List status</span>
+                        <strong>{show.status}</strong>
+                      </div>
+                    </div>
+
+                    <label className="toggle-box">
+                      <div>
+                        <div className="toggle-title">Sync this show</div>
+                        <div className="toggle-subtitle">
+                          Include in the next calendar update
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={show.selected}
+                        onChange={() => toggleSelected(show.id)}
+                      />
+                    </label>
+
+                    <div className="card-actions">
+                      <button className="button button-outline">View details</button>
+                      <button className="button button-dark">Queue sync</button>
+                    </div>
                   </div>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <CardTitle className="text-lg leading-tight">{show.title}</CardTitle>
-                        <CardDescription className="mt-2 text-sm leading-5">
-                          {show.titleJp}
-                        </CardDescription>
-                      </div>
-                      {show.synced ? (
-                        <Badge className="rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
-                          Synced
-                        </Badge>
-                      ) : (
-                        <Badge className="rounded-full bg-amber-100 text-amber-700 hover:bg-amber-100">
-                          Not synced
-                        </Badge>
-                      )}
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4 pb-5">
-                    <div className="flex flex-wrap gap-2 text-xs">
-                      <Pill>{show.season}</Pill>
-                      <Pill>{show.episodes} eps</Pill>
-                      <Pill>{show.duration} min</Pill>
-                      <Pill>{show.confidence}</Pill>
-                    </div>
-
-                    <div className="space-y-2 rounded-2xl bg-slate-50 p-4 text-sm">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-slate-500">Premiere</span>
-                        <span className="font-medium">{show.premiereDate}</span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-slate-500">Broadcast</span>
-                        <span className="font-medium">{show.broadcast}</span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-slate-500">List status</span>
-                        <span className="font-medium capitalize">{show.status}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
-                      <div>
-                        <p className="text-sm font-medium">Sync this show</p>
-                        <p className="text-xs text-slate-500">Include in the next calendar update</p>
-                      </div>
-                      <Switch checked={show.selected} onCheckedChange={() => toggleSelected(show.id)} />
-                    </div>
-
-                    <div className="flex gap-3">
-                      <Button variant="outline" className="flex-1 rounded-2xl border-slate-200">
-                        View details
-                      </Button>
-                      <Button className="flex-1 rounded-2xl bg-slate-900 text-white hover:bg-slate-800">
-                        Queue sync
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
+                </article>
               ))}
-            </div>
+            </section>
           </div>
 
-          <div className="space-y-6">
-            <Card className="rounded-[28px] border-0 shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-xl">
-                  <CloudCog className="h-5 w-5" />
-                  Backend status
-                </CardTitle>
-                <CardDescription>
-                  First-pass view of your sync pipeline from planned list to Google Calendar.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <div className="mb-2 flex items-center justify-between text-sm">
-                    <span className="text-slate-500">Last Jikan refresh</span>
-                    <span className="font-medium">2 min ago</span>
-                  </div>
-                  <div className="mb-2 flex items-center justify-between text-sm">
-                    <span className="text-slate-500">Last calendar sync</span>
-                    <span className="font-medium">Today · 9:12 PM</span>
-                  </div>
-                  <div className="mb-3 flex items-center justify-between text-sm">
-                    <span className="text-slate-500">Google auth</span>
-                    <span className="font-medium text-emerald-600">Connected</span>
-                  </div>
-                  <Progress value={72} className="h-2" />
-                  <p className="mt-2 text-xs text-slate-500">72% of selected shows have active calendar entries.</p>
+          <div className="right-column">
+            <section className="panel">
+              <h3>Backend status</h3>
+              <p className="panel-copy">
+                First-pass view of your sync pipeline from planned list to Google Calendar.
+              </p>
+
+              <div className="status-box">
+                <div className="info-row">
+                  <span>Last Jikan refresh</span>
+                  <strong>2 min ago</strong>
+                </div>
+                <div className="info-row">
+                  <span>Last calendar sync</span>
+                  <strong>Today · 9:12 PM</strong>
+                </div>
+                <div className="info-row">
+                  <span>Google auth</span>
+                  <strong className="ok">Connected</strong>
                 </div>
 
-                <div className="space-y-3">
-                  <div className="rounded-2xl border border-slate-200 p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-2xl bg-emerald-100 p-2">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-700" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">Frieren Season 2 synced</p>
-                        <p className="text-xs text-slate-500">24 episode placeholders created in Google Calendar</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-2xl bg-amber-100 p-2">
-                        <BellRing className="h-4 w-4 text-amber-700" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">Dandadan needs review</p>
-                        <p className="text-xs text-slate-500">Broadcast time confidence is low. Confirm before auto-creating events.</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-2xl bg-sky-100 p-2">
-                        <Sparkles className="h-4 w-4 text-sky-700" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">Auto-select rule enabled</p>
-                        <p className="text-xs text-slate-500">Upcoming planned shows are pre-selected when the premiere date exists.</p>
-                      </div>
-                    </div>
-                  </div>
+                <div className="progress-track">
+                  <div className="progress-bar" style={{ width: "72%" }} />
                 </div>
-              </CardContent>
-            </Card>
+                <p className="small-copy">
+                  72% of selected shows have active calendar entries.
+                </p>
+              </div>
 
-            <Card className="rounded-[28px] border-0 shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-xl">Suggested flow</CardTitle>
-                <CardDescription>
-                  Clean first pass for your GitHub Pages plus backend setup.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4 text-sm text-slate-600">
-                  <div className="rounded-2xl bg-slate-50 p-4">
-                    <p className="font-medium text-slate-900">1. Pull planned list</p>
-                    <p className="mt-1">Backend reads your planned anime list and filters to future or not-yet-aired titles.</p>
-                  </div>
-                  <div className="rounded-2xl bg-slate-50 p-4">
-                    <p className="font-medium text-slate-900">2. Review upcoming titles</p>
-                    <p className="mt-1">Frontend shows candidate matches, premiere dates, and sync confidence.</p>
-                  </div>
-                  <div className="rounded-2xl bg-slate-50 p-4">
-                    <p className="font-medium text-slate-900">3. Queue calendar sync</p>
-                    <p className="mt-1">Selected entries are sent to an API endpoint that creates or updates Google Calendar events.</p>
-                  </div>
-                  <div className="rounded-2xl bg-slate-50 p-4">
-                    <p className="font-medium text-slate-900">4. Reconcile changes later</p>
-                    <p className="mt-1">A scheduled job can refresh premiere dates and repair mismatched events automatically.</p>
-                  </div>
+              <div className="activity-list">
+                <div className="activity-item">
+                  <strong>Frieren Season 2 synced</strong>
+                  <span>24 episode placeholders created in Google Calendar</span>
                 </div>
-              </CardContent>
-            </Card>
+                <div className="activity-item">
+                  <strong>Dandadan needs review</strong>
+                  <span>Broadcast time confidence is low. Confirm before auto-creating events.</span>
+                </div>
+                <div className="activity-item">
+                  <strong>Auto-select rule enabled</strong>
+                  <span>Upcoming planned shows are pre-selected when the premiere date exists.</span>
+                </div>
+              </div>
+            </section>
+
+            <section className="panel">
+              <h3>Suggested flow</h3>
+              <p className="panel-copy">
+                Clean first pass for your GitHub Pages plus backend setup.
+              </p>
+
+              <div className="flow-list">
+                <div className="flow-item">
+                  <strong>1. Pull planned list</strong>
+                  <span>Backend reads your planned anime list and filters to future or not-yet-aired titles.</span>
+                </div>
+                <div className="flow-item">
+                  <strong>2. Review upcoming titles</strong>
+                  <span>Frontend shows candidate matches, premiere dates, and sync confidence.</span>
+                </div>
+                <div className="flow-item">
+                  <strong>3. Queue calendar sync</strong>
+                  <span>Selected entries are sent to an API endpoint that creates or updates Google Calendar events.</span>
+                </div>
+                <div className="flow-item">
+                  <strong>4. Reconcile changes later</strong>
+                  <span>A scheduled job can refresh premiere dates and repair mismatched events automatically.</span>
+                </div>
+              </div>
+            </section>
           </div>
         </div>
       </div>
