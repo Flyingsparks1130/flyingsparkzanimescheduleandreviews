@@ -1,4 +1,4 @@
-const API_BASE = "YOUR_APPS_SCRIPT_WEB_APP_URL";
+const API_BASE = "https://script.google.com/macros/s/AKfycbzQ1p4ZGP46E6vZpAmzhF4K3esbeu3uXwqdTscp-y5ETwnUpkiaPhprXVQj4IruH3_o/exec";
 
 export async function fetchPlannedUpcoming() {
   const res = await fetch(`${API_BASE}?action=planned-upcoming`);
