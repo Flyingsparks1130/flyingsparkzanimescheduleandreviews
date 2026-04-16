@@ -1,71 +1,5 @@
-import React, { useMemo, useState } from "react";
-
-const mockShows = [
-  {
-    id: 1,
-    title: "The Angel Next Door Spoils Me Rotten Season 2",
-    titleJp: "お隣の天使様にいつの間にか駄目人間にされていた件 2期",
-    season: "Spring 2026",
-    premiereDate: "2026-04-03",
-    broadcast: "Fridays · 10:30 PM JST",
-    episodes: 13,
-    duration: 23,
-    status: "planned",
-    upcoming: true,
-    selected: true,
-    synced: false,
-    image: "https://placehold.co/640x360?text=Anime+Poster",
-    confidence: "High match",
-  },
-  {
-    id: 2,
-    title: "Sousou no Frieren Season 2",
-    titleJp: "葬送のフリーレン 第2期",
-    season: "Fall 2026",
-    premiereDate: "2026-10-10",
-    broadcast: "Saturdays · 11:00 PM JST",
-    episodes: 24,
-    duration: 24,
-    status: "planned",
-    upcoming: true,
-    selected: true,
-    synced: true,
-    image: "https://placehold.co/640x360?text=Anime+Poster",
-    confidence: "High match",
-  },
-  {
-    id: 3,
-    title: "Dandadan Season 2",
-    titleJp: "ダンダダン 第2期",
-    season: "Summer 2026",
-    premiereDate: "2026-07-04",
-    broadcast: "Thursdays · 12:00 AM JST",
-    episodes: 12,
-    duration: 24,
-    status: "planned",
-    upcoming: true,
-    selected: false,
-    synced: false,
-    image: "https://placehold.co/640x360?text=Anime+Poster",
-    confidence: "Needs review",
-  },
-  {
-    id: 4,
-    title: "Blue Box Season 2",
-    titleJp: "アオのハコ 第2期",
-    season: "Winter 2027",
-    premiereDate: "2027-01-09",
-    broadcast: "Fridays · 11:30 PM JST",
-    episodes: 12,
-    duration: 24,
-    status: "planned",
-    upcoming: true,
-    selected: false,
-    synced: false,
-    image: "https://placehold.co/640x360?text=Anime+Poster",
-    confidence: "High match",
-  },
-];
+import React, { useEffect, useMemo, useState } from "react";
+import { fetchPlannedUpcoming, syncSelectedShows } from "./api/client";
 
 function StatCard({ label, value, subtext }) {
   return (
@@ -78,14 +12,63 @@ function StatCard({ label, value, subtext }) {
 }
 
 export default function App() {
-  const [shows, setShows] = useState(mockShows);
+  const [shows, setShows] = useState([]);
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState("upcoming");
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState("");
+  const [lastRefresh, setLastRefresh] = useState("");
+
+  async function loadShows() {
+    setError("");
+
+    try {
+      const data = await fetchPlannedUpcoming();
+      const incoming = Array.isArray(data.shows) ? data.shows : [];
+
+      const normalized = incoming.map((show, index) => ({
+        id: show.malId || show.id || index + 1,
+        malId: show.malId || null,
+        title: show.title || "Unknown title",
+        titleJp: show.titleJp || "",
+        season: show.season || "Unknown season",
+        premiereDate: show.premiereDate || "Unknown",
+        broadcast: show.broadcast || "Unknown",
+        episodes: show.episodes || 0,
+        duration: show.duration || 24,
+        status: show.status || "planned",
+        upcoming: show.upcoming !== false,
+        selected: show.selected ?? true,
+        synced: show.synced ?? false,
+        image: show.image || "https://placehold.co/640x360?text=Anime+Poster",
+        confidence: show.confidence || "Imported from backend"
+      }));
+
+      setShows(normalized);
+      setLastRefresh(new Date().toLocaleString());
+    } catch (err) {
+      setError(err.message || "Failed to load shows");
+    }
+  }
+
+  useEffect(() => {
+    async function init() {
+      setLoading(true);
+      await loadShows();
+      setLoading(false);
+    }
+
+    init();
+  }, []);
 
   const filtered = useMemo(() => {
     return shows.filter((show) => {
-      const q = query.toLowerCase();
+      const q = query.toLowerCase().trim();
+
       const matchesQuery =
+        !q ||
         show.title.toLowerCase().includes(q) ||
         show.titleJp.toLowerCase().includes(q) ||
         show.season.toLowerCase().includes(q);
@@ -115,12 +98,52 @@ export default function App() {
     );
   }
 
-  function markSelectedSynced() {
-    setShows((prev) =>
-      prev.map((show) =>
-        show.selected ? { ...show, synced: true } : show
-      )
-    );
+  async function handleRefresh() {
+    setRefreshing(true);
+    await loadShows();
+    setRefreshing(false);
+  }
+
+  async function handleSyncSelected() {
+    const selectedShows = shows.filter((show) => show.selected);
+
+    if (selectedShows.length === 0) {
+      setError("No shows selected to sync.");
+      return;
+    }
+
+    setError("");
+    setSyncing(true);
+
+    try {
+      await syncSelectedShows(selectedShows);
+
+      setShows((prev) =>
+        prev.map((show) =>
+          show.selected ? { ...show, synced: true } : show
+        )
+      );
+    } catch (err) {
+      setError(err.message || "Failed to sync selected shows");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function handleSyncOne(show) {
+    setError("");
+
+    try {
+      await syncSelectedShows([{ ...show, selected: true }]);
+
+      setShows((prev) =>
+        prev.map((item) =>
+          item.id === show.id ? { ...item, synced: true, selected: true } : item
+        )
+      );
+    } catch (err) {
+      setError(err.message || `Failed to sync ${show.title}`);
+    }
   }
 
   return (
@@ -146,11 +169,20 @@ export default function App() {
                 </div>
 
                 <div className="hero-actions">
-                  <button className="button button-light">
-                    Refresh from Jikan
+                  <button
+                    className="button button-light"
+                    onClick={handleRefresh}
+                    disabled={refreshing || loading}
+                  >
+                    {refreshing ? "Refreshing..." : "Refresh from Jikan"}
                   </button>
-                  <button className="button button-primary" onClick={markSelectedSynced}>
-                    Sync selected
+
+                  <button
+                    className="button button-primary"
+                    onClick={handleSyncSelected}
+                    disabled={syncing || loading}
+                  >
+                    {syncing ? "Syncing..." : "Sync selected"}
                   </button>
                 </div>
               </div>
@@ -212,67 +244,88 @@ export default function App() {
               </div>
             </section>
 
-            <section className="cards-grid">
-              {filtered.map((show) => (
-                <article className="anime-card" key={show.id}>
-                  <img className="anime-image" src={show.image} alt={show.title} />
+            {error && (
+              <section className="panel">
+                <p style={{ margin: 0, color: "#b91c1c", fontWeight: 600 }}>
+                  {error}
+                </p>
+              </section>
+            )}
 
-                  <div className="anime-content">
-                    <div className="anime-header">
-                      <div>
-                        <h2>{show.title}</h2>
-                        <p className="jp-title">{show.titleJp}</p>
+            {loading ? (
+              <section className="panel">
+                <p style={{ margin: 0 }}>Loading anime from backend...</p>
+              </section>
+            ) : (
+              <section className="cards-grid">
+                {filtered.map((show) => (
+                  <article className="anime-card" key={show.id}>
+                    <img className="anime-image" src={show.image} alt={show.title} />
+
+                    <div className="anime-content">
+                      <div className="anime-header">
+                        <div>
+                          <h2>{show.title}</h2>
+                          <p className="jp-title">{show.titleJp}</p>
+                        </div>
+
+                        <span className={show.synced ? "status synced" : "status unsynced"}>
+                          {show.synced ? "Synced" : "Not synced"}
+                        </span>
                       </div>
 
-                      <span className={show.synced ? "status synced" : "status unsynced"}>
-                        {show.synced ? "Synced" : "Not synced"}
-                      </span>
-                    </div>
-
-                    <div className="pill-row">
-                      <span className="pill">{show.season}</span>
-                      <span className="pill">{show.episodes} eps</span>
-                      <span className="pill">{show.duration} min</span>
-                      <span className="pill">{show.confidence}</span>
-                    </div>
-
-                    <div className="info-box">
-                      <div className="info-row">
-                        <span>Premiere</span>
-                        <strong>{show.premiereDate}</strong>
+                      <div className="pill-row">
+                        <span className="pill">{show.season}</span>
+                        <span className="pill">{show.episodes} eps</span>
+                        <span className="pill">{show.duration} min</span>
+                        <span className="pill">{show.confidence}</span>
                       </div>
-                      <div className="info-row">
-                        <span>Broadcast</span>
-                        <strong>{show.broadcast}</strong>
-                      </div>
-                      <div className="info-row">
-                        <span>List status</span>
-                        <strong>{show.status}</strong>
-                      </div>
-                    </div>
 
-                    <label className="toggle-box">
-                      <div>
-                        <div className="toggle-title">Sync this show</div>
-                        <div className="toggle-subtitle">
-                          Include in the next calendar update
+                      <div className="info-box">
+                        <div className="info-row">
+                          <span>Premiere</span>
+                          <strong>{show.premiereDate}</strong>
+                        </div>
+                        <div className="info-row">
+                          <span>Broadcast</span>
+                          <strong>{show.broadcast}</strong>
+                        </div>
+                        <div className="info-row">
+                          <span>List status</span>
+                          <strong>{show.status}</strong>
                         </div>
                       </div>
-                      <input
-                        type="checkbox"
-                        checked={show.selected}
-                        onChange={() => toggleSelected(show.id)}
-                      />
-                    </label>
 
-                    <div className="card-actions">
-                      <button className="button button-outline">View details</button>
-                      <button className="button button-dark">Queue sync</button>
+                      <label className="toggle-box">
+                        <div>
+                          <div className="toggle-title">Sync this show</div>
+                          <div className="toggle-subtitle">
+                            Include in the next calendar update
+                          </div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={show.selected}
+                          onChange={() => toggleSelected(show.id)}
+                        />
+                      </label>
+
+                      <div className="card-actions">
+                        <button className="button button-outline">
+                          View details
+                        </button>
+                        <button
+                          className="button button-dark"
+                          onClick={() => handleSyncOne(show)}
+                        >
+                          Queue sync
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                </article>
-              ))}
-            </section>
+                  </article>
+                ))}
+              </section>
+            )}
           </div>
 
           <div className="right-column">
@@ -285,11 +338,11 @@ export default function App() {
               <div className="status-box">
                 <div className="info-row">
                   <span>Last Jikan refresh</span>
-                  <strong>2 min ago</strong>
+                  <strong>{lastRefresh || "Not yet loaded"}</strong>
                 </div>
                 <div className="info-row">
                   <span>Last calendar sync</span>
-                  <strong>Today · 9:12 PM</strong>
+                  <strong>{syncing ? "Sync in progress..." : "Waiting"}</strong>
                 </div>
                 <div className="info-row">
                   <span>Google auth</span>
@@ -297,26 +350,21 @@ export default function App() {
                 </div>
 
                 <div className="progress-track">
-                  <div className="progress-bar" style={{ width: "72%" }} />
+                  <div
+                    className="progress-bar"
+                    style={{
+                      width: shows.length
+                        ? `${Math.round((syncedCount / shows.length) * 100)}%`
+                        : "0%"
+                    }}
+                  />
                 </div>
-                <p className="small-copy">
-                  72% of selected shows have active calendar entries.
-                </p>
-              </div>
 
-              <div className="activity-list">
-                <div className="activity-item">
-                  <strong>Frieren Season 2 synced</strong>
-                  <span>24 episode placeholders created in Google Calendar</span>
-                </div>
-                <div className="activity-item">
-                  <strong>Dandadan needs review</strong>
-                  <span>Broadcast time confidence is low. Confirm before auto-creating events.</span>
-                </div>
-                <div className="activity-item">
-                  <strong>Auto-select rule enabled</strong>
-                  <span>Upcoming planned shows are pre-selected when the premiere date exists.</span>
-                </div>
+                <p className="small-copy">
+                  {shows.length
+                    ? `${Math.round((syncedCount / shows.length) * 100)}% of loaded shows are marked synced.`
+                    : "No shows loaded yet."}
+                </p>
               </div>
             </section>
 
