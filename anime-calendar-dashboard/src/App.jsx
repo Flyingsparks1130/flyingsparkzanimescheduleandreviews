@@ -825,7 +825,6 @@ export default function App() {
           <span className="hm-lab">More</span>
         </div>
       </div>
-      </button>
     );
   };
 
