@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { fetchPlannedUpcoming, syncSelectedShows } from "./api/client";
+import { fetchAnimeList, syncSelectedShows } from "./api/client";
 
 function StatCard({ label, value, subtext }) {
   return (
@@ -11,10 +11,39 @@ function StatCard({ label, value, subtext }) {
   );
 }
 
+function normalizeDateString(value) {
+  if (!value) return null;
+  if (/^\d{4}$/.test(value)) return `${value}-01-01`;
+  if (/^\d{4}-\d{2}$/.test(value)) return `${value}-01`;
+  return value;
+}
+
+function isUpcomingDate(value) {
+  const normalized = normalizeDateString(value);
+  if (!normalized) return false;
+  const date = new Date(`${normalized}T00:00:00`);
+  return !Number.isNaN(date.getTime()) && date.getTime() >= Date.now() - 24 * 60 * 60 * 1000;
+}
+
+function isWithinDays(value, days) {
+  const normalized = normalizeDateString(value);
+  if (!normalized) return false;
+
+  const date = new Date(`${normalized}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return false;
+
+  const now = new Date();
+  const future = new Date();
+  future.setDate(now.getDate() + days);
+
+  return date >= now && date <= future;
+}
+
 export default function App() {
   const [shows, setShows] = useState([]);
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState("upcoming");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [timeFilter, setTimeFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -25,8 +54,8 @@ export default function App() {
     setError("");
 
     try {
-      const data = await fetchPlannedUpcoming();
-      const incoming = Array.isArray(data.shows) ? data.shows : [];
+      const data = await fetchAnimeList();
+      const incoming = Array.isArray(data.items) ? data.items : [];
 
       const normalized = incoming.map((show, index) => ({
         id: show.malId || show.id || index + 1,
@@ -34,13 +63,13 @@ export default function App() {
         title: show.title || "Unknown title",
         titleJp: show.titleJp || "",
         season: show.season || "Unknown season",
-        premiereDate: show.premiereDate || "Unknown",
+        premiereDate: show.premiereDate || "",
         broadcast: show.broadcast || "Unknown",
         episodes: show.episodes || 0,
         duration: show.duration || 24,
-        status: show.status || "planned",
-        upcoming: show.upcoming !== false,
-        selected: show.selected ?? true,
+        status: show.status || "",
+        score: show.score ?? 0,
+        selected: show.selected ?? false,
         synced: show.synced ?? false,
         image: show.image || "https://placehold.co/640x360?text=Anime+Poster",
         confidence: show.confidence || "Imported from backend"
@@ -49,7 +78,7 @@ export default function App() {
       setShows(normalized);
       setLastRefresh(new Date().toLocaleString());
     } catch (err) {
-      setError(err.message || "Failed to load shows");
+      setError(err.message || "Failed to load anime");
     }
   }
 
@@ -71,20 +100,28 @@ export default function App() {
         !q ||
         show.title.toLowerCase().includes(q) ||
         show.titleJp.toLowerCase().includes(q) ||
-        show.season.toLowerCase().includes(q);
+        show.season.toLowerCase().includes(q) ||
+        show.status.toLowerCase().includes(q);
 
-      const matchesTab =
-        tab === "all"
+      const matchesStatus =
+        statusFilter === "all" ? true : show.status === statusFilter;
+
+      const matchesTime =
+        timeFilter === "all"
           ? true
-          : tab === "selected"
-          ? show.selected
-          : tab === "synced"
-          ? show.synced
-          : show.upcoming;
+          : timeFilter === "upcoming"
+          ? isUpcomingDate(show.premiereDate)
+          : timeFilter === "next30"
+          ? isWithinDays(show.premiereDate, 30)
+          : timeFilter === "next90"
+          ? isWithinDays(show.premiereDate, 90)
+          : timeFilter === "tbd"
+          ? !show.premiereDate
+          : true;
 
-      return matchesQuery && matchesTab;
+      return matchesQuery && matchesStatus && matchesTime;
     });
-  }, [shows, query, tab]);
+  }, [shows, query, statusFilter, timeFilter]);
 
   const selectedCount = shows.filter((s) => s.selected).length;
   const syncedCount = shows.filter((s) => s.synced).length;
@@ -153,8 +190,8 @@ export default function App() {
           <div className="left-column">
             <section className="hero-card">
               <div className="hero-tags">
-                <span className="pill">Jikan planned list</span>
-                <span className="pill">Upcoming anime</span>
+                <span className="pill">MyAnimeList library</span>
+                <span className="pill">Frontend time filters</span>
                 <span className="pill">Google Calendar sync</span>
               </div>
 
@@ -162,9 +199,8 @@ export default function App() {
                 <div>
                   <h1>Anime Calendar Sync</h1>
                   <p className="hero-copy">
-                    A GitHub Pages control panel for pulling future shows from
-                    your planned list, reviewing matches, and syncing selected
-                    series into Google Calendar.
+                    A dashboard for loading your MAL anime library, filtering by
+                    status and time range, and syncing selected titles into Google Calendar.
                   </p>
                 </div>
 
@@ -174,7 +210,7 @@ export default function App() {
                     onClick={handleRefresh}
                     disabled={refreshing || loading}
                   >
-                    {refreshing ? "Refreshing..." : "Refresh from Jikan"}
+                    {refreshing ? "Refreshing..." : "Refresh from MAL"}
                   </button>
 
                   <button
@@ -212,34 +248,34 @@ export default function App() {
                   className="search-input"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search title, JP title, or season"
+                  placeholder="Search title, JP title, season, or status"
                 />
 
-                <div className="tab-row">
-                  <button
-                    className={tab === "upcoming" ? "tab active" : "tab"}
-                    onClick={() => setTab("upcoming")}
+                <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+                  <select
+                    className="search-input"
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
                   >
-                    Upcoming
-                  </button>
-                  <button
-                    className={tab === "selected" ? "tab active" : "tab"}
-                    onClick={() => setTab("selected")}
+                    <option value="all">All statuses</option>
+                    <option value="watching">Watching</option>
+                    <option value="completed">Completed</option>
+                    <option value="on_hold">On hold</option>
+                    <option value="dropped">Dropped</option>
+                    <option value="plan_to_watch">Plan to watch</option>
+                  </select>
+
+                  <select
+                    className="search-input"
+                    value={timeFilter}
+                    onChange={(e) => setTimeFilter(e.target.value)}
                   >
-                    Selected
-                  </button>
-                  <button
-                    className={tab === "synced" ? "tab active" : "tab"}
-                    onClick={() => setTab("synced")}
-                  >
-                    Synced
-                  </button>
-                  <button
-                    className={tab === "all" ? "tab active" : "tab"}
-                    onClick={() => setTab("all")}
-                  >
-                    All
-                  </button>
+                    <option value="all">All dates</option>
+                    <option value="upcoming">Upcoming</option>
+                    <option value="next30">Next 30 days</option>
+                    <option value="next90">Next 90 days</option>
+                    <option value="tbd">No date / TBD</option>
+                  </select>
                 </div>
               </div>
             </section>
@@ -275,16 +311,16 @@ export default function App() {
                       </div>
 
                       <div className="pill-row">
-                        <span className="pill">{show.season}</span>
+                        <span className="pill">{show.season || "Unknown season"}</span>
                         <span className="pill">{show.episodes} eps</span>
                         <span className="pill">{show.duration} min</span>
-                        <span className="pill">{show.confidence}</span>
+                        <span className="pill">Score: {show.score || "-"}</span>
                       </div>
 
                       <div className="info-box">
                         <div className="info-row">
                           <span>Premiere</span>
-                          <strong>{show.premiereDate}</strong>
+                          <strong>{show.premiereDate || "TBD"}</strong>
                         </div>
                         <div className="info-row">
                           <span>Broadcast</span>
@@ -292,7 +328,7 @@ export default function App() {
                         </div>
                         <div className="info-row">
                           <span>List status</span>
-                          <strong>{show.status}</strong>
+                          <strong>{show.status || "-"}</strong>
                         </div>
                       </div>
 
@@ -332,12 +368,12 @@ export default function App() {
             <section className="panel">
               <h3>Backend status</h3>
               <p className="panel-copy">
-                First-pass view of your sync pipeline from planned list to Google Calendar.
+                MAL list data is loaded from your Apps Script backend and can be sent to Google Calendar sync.
               </p>
 
               <div className="status-box">
                 <div className="info-row">
-                  <span>Last Jikan refresh</span>
+                  <span>Last MAL refresh</span>
                   <strong>{lastRefresh || "Not yet loaded"}</strong>
                 </div>
                 <div className="info-row">
@@ -365,32 +401,6 @@ export default function App() {
                     ? `${Math.round((syncedCount / shows.length) * 100)}% of loaded shows are marked synced.`
                     : "No shows loaded yet."}
                 </p>
-              </div>
-            </section>
-
-            <section className="panel">
-              <h3>Suggested flow</h3>
-              <p className="panel-copy">
-                Clean first pass for your GitHub Pages plus backend setup.
-              </p>
-
-              <div className="flow-list">
-                <div className="flow-item">
-                  <strong>1. Pull planned list</strong>
-                  <span>Backend reads your planned anime list and filters to future or not-yet-aired titles.</span>
-                </div>
-                <div className="flow-item">
-                  <strong>2. Review upcoming titles</strong>
-                  <span>Frontend shows candidate matches, premiere dates, and sync confidence.</span>
-                </div>
-                <div className="flow-item">
-                  <strong>3. Queue calendar sync</strong>
-                  <span>Selected entries are sent to an API endpoint that creates or updates Google Calendar events.</span>
-                </div>
-                <div className="flow-item">
-                  <strong>4. Reconcile changes later</strong>
-                  <span>A scheduled job can refresh premiere dates and repair mismatched events automatically.</span>
-                </div>
               </div>
             </section>
           </div>
