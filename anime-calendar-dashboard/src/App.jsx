@@ -49,6 +49,7 @@ export default function App() {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
   const [lastRefresh, setLastRefresh] = useState("");
+  const [lastSync, setLastSync] = useState("");
 
   async function loadShows() {
     setError("");
@@ -154,12 +155,8 @@ export default function App() {
 
     try {
       await syncSelectedShows(selectedShows);
-
-      setShows((prev) =>
-        prev.map((show) =>
-          show.selected ? { ...show, synced: true } : show
-        )
-      );
+      setLastSync(new Date().toLocaleString());
+      await loadShows();
     } catch (err) {
       setError(err.message || "Failed to sync selected shows");
     } finally {
@@ -169,17 +166,16 @@ export default function App() {
 
   async function handleSyncOne(show) {
     setError("");
+    setSyncing(true);
 
     try {
       await syncSelectedShows([{ ...show, selected: true }]);
-
-      setShows((prev) =>
-        prev.map((item) =>
-          item.id === show.id ? { ...item, synced: true, selected: true } : item
-        )
-      );
+      setLastSync(new Date().toLocaleString());
+      await loadShows();
     } catch (err) {
       setError(err.message || `Failed to sync ${show.title}`);
+    } finally {
+      setSyncing(false);
     }
   }
 
@@ -202,6 +198,18 @@ export default function App() {
                     A dashboard for loading your MAL anime library, filtering by
                     status and time range, and syncing selected titles into Google Calendar.
                   </p>
+
+                  <div style={{ marginTop: "1rem", opacity: 0.9 }}>
+                    <p style={{ margin: "0 0 0.35rem 0" }}>
+                      <strong>Reload library from MAL</strong> fetches your current MAL list.
+                    </p>
+                    <p style={{ margin: "0 0 0.35rem 0" }}>
+                      <strong>Create/update Google Calendar events</strong> writes selected anime into your Google Calendar.
+                    </p>
+                    <p style={{ margin: 0 }}>
+                      Already-synced titles are detected from existing calendar events.
+                    </p>
+                  </div>
                 </div>
 
                 <div className="hero-actions">
@@ -210,7 +218,7 @@ export default function App() {
                     onClick={handleRefresh}
                     disabled={refreshing || loading}
                   >
-                    {refreshing ? "Refreshing..." : "Refresh from MAL"}
+                    {refreshing ? "Reloading..." : "Reload library from MAL"}
                   </button>
 
                   <button
@@ -218,7 +226,7 @@ export default function App() {
                     onClick={handleSyncSelected}
                     disabled={syncing || loading}
                   >
-                    {syncing ? "Syncing..." : "Sync selected"}
+                    {syncing ? "Creating/updating..." : "Create/update Google Calendar events"}
                   </button>
                 </div>
               </div>
@@ -226,19 +234,19 @@ export default function App() {
 
             <section className="stats-grid">
               <StatCard
-                label="Shows selected"
+                label="Queued for sync"
                 value={selectedCount}
-                subtext="Currently queued for sync"
+                subtext="Currently selected for calendar sync"
               />
               <StatCard
-                label="Already synced"
+                label="Found in Google Calendar"
                 value={syncedCount}
-                subtext="Mapped into Google Calendar"
+                subtext="Detected from backend calendar data"
               />
               <StatCard
                 label="Pending jobs"
                 value={queueCount}
-                subtext="Ready for backend processing"
+                subtext="Selected but not yet found as synced"
               />
             </section>
 
@@ -334,9 +342,9 @@ export default function App() {
 
                       <label className="toggle-box">
                         <div>
-                          <div className="toggle-title">Sync this show</div>
+                          <div className="toggle-title">Include this show in sync</div>
                           <div className="toggle-subtitle">
-                            Include in the next calendar update
+                            Will be included when you click sync
                           </div>
                         </div>
                         <input
@@ -353,8 +361,9 @@ export default function App() {
                         <button
                           className="button button-dark"
                           onClick={() => handleSyncOne(show)}
+                          disabled={syncing}
                         >
-                          Queue sync
+                          {syncing ? "Working..." : "Create/update this one"}
                         </button>
                       </div>
                     </div>
@@ -378,7 +387,7 @@ export default function App() {
                 </div>
                 <div className="info-row">
                   <span>Last calendar sync</span>
-                  <strong>{syncing ? "Sync in progress..." : "Waiting"}</strong>
+                  <strong>{syncing ? "Sync in progress..." : lastSync || "Waiting"}</strong>
                 </div>
                 <div className="info-row">
                   <span>Google auth</span>
