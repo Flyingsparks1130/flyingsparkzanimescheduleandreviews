@@ -244,9 +244,6 @@ body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;font
 .nav-refresh:disabled{opacity:.4;cursor:wait}
 @keyframes spin{to{transform:rotate(360deg)}}
 .nav-refresh.spinning{animation:spin .8s linear infinite}
-.card-btn{all:unset;display:block;cursor:pointer}
-.sb-head{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:10px}.sb-toggle{border:1px solid var(--border2);background:transparent;border-radius:999px;color:var(--text2);padding:.25rem .65rem;font-size:.68rem;font-weight:700;cursor:pointer}.sb-toggle:hover{color:var(--text);border-color:var(--accent)}
-.detail-ov{position:fixed;inset:0;background:rgba(4,8,16,.72);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:24px;z-index:1000}.detail-modal{width:min(880px,100%);max-height:90vh;overflow:auto;background:linear-gradient(180deg,var(--bg2),var(--bg3));border:1px solid var(--border2);border-radius:24px;box-shadow:0 28px 80px rgba(0,0,0,.45)}.detail-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:22px 22px 12px}.detail-title{font-family:'Syne',sans-serif;font-size:1.5rem;font-weight:800;margin:0 0 6px}.detail-sub{color:var(--text2);font-size:.86rem}.detail-close{border:1px solid var(--border2);background:transparent;color:var(--text);border-radius:10px;padding:.5rem .75rem;font-weight:700;cursor:pointer}.detail-body{display:grid;grid-template-columns:220px 1fr;gap:22px;padding:0 22px 22px}.detail-cover{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:18px;border:1px solid var(--border2);background:var(--bg3)}.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:14px}.detail-kv{padding:12px 14px;border:1px solid var(--border);background:rgba(255,255,255,.03);border-radius:16px}.detail-k{font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-bottom:4px}.detail-v{font-size:.9rem;color:var(--text)}.detail-copy{color:var(--text2);line-height:1.7;border-top:1px solid var(--border);padding-top:14px}@media (max-width:820px){.detail-body{grid-template-columns:1fr}.detail-cover{max-width:280px}}
 .sidebar{width:192px;flex-shrink:0;background:var(--bg2);border-left:1px solid var(--border);padding:1.1rem .9rem;display:flex;flex-direction:column;gap:.28rem;overflow-y:auto}
 .sb-title{font-family:'Syne',sans-serif;font-size:.62rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);padding:0 .3rem .1rem}
 .sf{display:flex;align-items:center;gap:.45rem;padding:.38rem .45rem;border-radius:7px;cursor:pointer;user-select:none;transition:background .1s}
@@ -279,6 +276,9 @@ body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;font
 .toast.ok{background:rgba(74,222,128,.18);border:1px solid rgba(74,222,128,.35);color:#4ade80}
 .toast.fail{background:rgba(248,113,113,.14);border:1px solid rgba(248,113,113,.3);color:#f87171}
 @keyframes toastIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.card-btn{all:unset;display:block;cursor:pointer}
+.sb-head{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:10px}.sb-toggle{border:1px solid var(--border2);background:transparent;border-radius:999px;color:var(--text2);padding:.25rem .65rem;font-size:.68rem;font-weight:700;cursor:pointer}.sb-toggle:hover{color:var(--text);border-color:var(--accent)}
+.detail-ov{position:fixed;inset:0;background:rgba(4,8,16,.72);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:24px;z-index:1000}.detail-modal{width:min(880px,100%);max-height:90vh;overflow:auto;background:linear-gradient(180deg,var(--bg2),var(--bg3));border:1px solid var(--border2);border-radius:24px;box-shadow:0 28px 80px rgba(0,0,0,.45)}.detail-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:22px 22px 12px}.detail-title{font-family:'Syne',sans-serif;font-size:1.5rem;font-weight:800;margin:0 0 6px}.detail-sub{color:var(--text2);font-size:.86rem}.detail-close{border:1px solid var(--border2);background:transparent;color:var(--text);border-radius:10px;padding:.5rem .75rem;font-weight:700;cursor:pointer}.detail-body{display:grid;grid-template-columns:220px 1fr;gap:22px;padding:0 22px 22px}.detail-cover{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:18px;border:1px solid var(--border2);background:var(--bg3)}.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:14px}.detail-kv{padding:12px 14px;border:1px solid var(--border);background:rgba(255,255,255,.03);border-radius:16px}.detail-k{font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-bottom:4px}.detail-v{font-size:.9rem;color:var(--text)}.detail-copy{color:var(--text2);line-height:1.7;border-top:1px solid var(--border);padding-top:14px}@media (max-width:820px){.detail-body{grid-template-columns:1fr}.detail-cover{max-width:280px}}
 
 /* TIMELINE */
 .tl-scroll{overflow-x:auto;overflow-y:hidden;white-space:nowrap;scroll-behavior:smooth;padding:0 1.6rem 1.5rem;cursor:ew-resize}
@@ -438,6 +438,8 @@ export default function App() {
   const [covers, setCovers]           = useState({});
   const [coverStatus, setCoverStatus] = useState({});
   const [toast, setToast]             = useState(null);  // { ok, msg }
+  const [statusFilterOpen, setStatusFilterOpen] = useState(true);
+  const [selectedShow, setSelectedShow] = useState(null);
   const toastTimer = useRef(null);
   const timelineRef = useRef(null);
   const timelinePaneRef = useRef(null);
@@ -749,7 +751,6 @@ export default function App() {
     const cfg = STATUS[show.status];
     const cover = getCover(show);
     return (
-      <button type="button" className="card-btn" onClick={() => setSelectedShow(show)} title={fmtFull(show.premiereDate)}>
       <div className="tcard" style={{ borderTop: isTop ? `2px solid ${cfg?.color}` : undefined, borderBottom: !isTop ? `2px solid ${cfg?.color}` : undefined }}>
         {cover && coverStatus[show.id] !== "error"
           ? <img
@@ -822,6 +823,7 @@ export default function App() {
           <span className="hm-lab">More</span>
         </div>
       </div>
+      </button>
     );
   };
 
