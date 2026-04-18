@@ -1,11 +1,15 @@
 const API_BASE = "https://script.google.com/macros/s/AKfycbw5-yXcXE3vfgxOFPftoDfcQUlzZyvc9rsw5j5gZFjLXSOcvs7fJxt_crOwqegZ3omu/exec";
 
-export async function fetchPlannedUpcoming() {
-  const res = await fetch(`${API_BASE}?action=planned-upcoming`);
+export async function fetchAnimeList(status = "") {
+  const url = status
+    ? `${API_BASE}?action=anime-list&status=${encodeURIComponent(status)}`
+    : `${API_BASE}?action=anime-list`;
+
+  const res = await fetch(url);
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Failed to fetch planned upcoming anime: ${text}`);
+    throw new Error(`Failed to fetch anime list: ${text}`);
   }
 
   return res.json();
