@@ -88,13 +88,14 @@ function normalizeShow(raw, idx) {
 }
 
 function extractShows(apiData) {
-  // Handle different response shapes
   const arr = Array.isArray(apiData) ? apiData
+    : Array.isArray(apiData?.items) ? apiData.items
     : Array.isArray(apiData?.anime) ? apiData.anime
     : Array.isArray(apiData?.data) ? apiData.data
     : Array.isArray(apiData?.list) ? apiData.list
     : Array.isArray(apiData?.shows) ? apiData.shows
     : [];
+
   return arr.map((raw, i) => normalizeShow(raw, i));
 }
 
