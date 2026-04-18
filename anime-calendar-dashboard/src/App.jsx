@@ -790,7 +790,6 @@ export default function App() {
             {/* ── TIMELINE ── */}
             {page === "timeline" && !dataLoading && shows.length > 0 && (
               <div>
-                {(() => { throw new Error("APP_STAGE_TIMELINE_BRANCH"); })()}
                 <div className="ph">
                   <h1>My Anime Timeline</h1>
                   <p>{filteredSorted.length} shows · sorted by premiere date · scroll right →</p>
