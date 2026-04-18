@@ -122,6 +122,19 @@ function extractShows(apiData) {
    CONSTANTS
    ═══════════════════════════════════════════ */
 const TODAY = new Date();
+const TIMELINE_SLOT_WIDTH = 208;
+const TODAY_MARKER_WIDTH = 52;
+
+function fmtFull(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(undefined, {
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
 
 const STATUS = {
   watching:      { label: "Watching",      color: "#22d3ee", symbol: "▶" },
@@ -576,7 +589,7 @@ export default function App() {
   // ── Derived data (all use `shows` state instead of hardcoded SHOWS) ──
   const filteredSorted = useMemo(() =>
     shows.filter(s => statusFilter.has(s.status))
-         .sort((a, b) => new Date(a.premiereDate) - new Date(b.premiereDate)),
+         .sort((a, b) => new Date(a.premiereDate).getTime() - new Date(b.premiereDate).getTime()),
     [statusFilter, shows]
   );
 
