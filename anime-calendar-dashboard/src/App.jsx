@@ -422,7 +422,7 @@ export default function App() {
     );
 
     el.scrollLeft = targetLeft;
-  }, [shows, timeFilter]);
+  }, [timelineItems]);
 
   // ── Show toast helper ──
   const showToast = useCallback((ok, msg) => {
