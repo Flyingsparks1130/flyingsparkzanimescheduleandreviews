@@ -377,6 +377,7 @@ body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;font
    COMPONENT
    ═══════════════════════════════════════════ */
 export default function App() {
+  throw new Error("APP_V2_IS_RUNNING");
   // ── Data state (from backend) ──
   const [shows, setShows]             = useState([]);
   const [dataLoading, setDataLoading] = useState(true);
