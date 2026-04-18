@@ -751,36 +751,38 @@ export default function App() {
     const cfg = STATUS[show.status];
     const cover = getCover(show);
     return (
-      <div className="tcard" style={{ borderTop: isTop ? `2px solid ${cfg?.color}` : undefined, borderBottom: !isTop ? `2px solid ${cfg?.color}` : undefined }}>
-        {cover && coverStatus[show.id] !== "error"
-          ? <img
-              className="tcard-img"
-              src={cover}
-              alt={show.title}
-              loading="lazy"
-              onError={() => setCoverStatus((prev) => ({ ...prev, [show.id]: "error" }))}
-            />
-          : <div className="tcard-img-ph" style={{ background: coverPh(show), display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", gap:"6px", padding:"12px", textAlign:"center" }}>
-              <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:"2rem", color:cfg?.color, opacity:.22 }}>{show.title[0]}</span>
-              <span style={{ fontSize:"0.78rem", color:"var(--text2)" }}>
-                {coverStatus[show.id] === "loading"
-                  ? "Loading image…"
-                  : coverStatus[show.id] === "error"
-                  ? "Image failed to load"
-                  : "No image found"}
-              </span>
+      <button type="button" className="card-btn" onClick={() => setSelectedShow(show)} title={fmtFull(show.premiereDate)}>
+        <div className="tcard" style={{ borderTop: isTop ? `2px solid ${cfg?.color}` : undefined, borderBottom: !isTop ? `2px solid ${cfg?.color}` : undefined }}>
+          {cover && coverStatus[show.id] !== "error"
+            ? <img
+                className="tcard-cover"
+                src={cover}
+                alt={show.title}
+                onError={() => setCoverStatus(m => ({ ...m, [show.id]: "error" }))}
+                onLoad={() => setCoverStatus(m => ({ ...m, [show.id]: "ok" }))}
+              />
+            : <div className="tcard-cover ph">{(show.title||"?").slice(0,2).toUpperCase()}</div>
+          }
+          {!cover && (
+            <div className="cover-miss" aria-hidden="true">
+              <span className="cover-miss-txt">No image</span>
             </div>
-        }
-        <div className="tcard-body">
-          <div className="tcard-dt">{show.premiereDate}</div>
-          <div className="tcard-ti">{show.title}</div>
-          <div className="tcard-row">
-            <span className="tcard-tag" style={{ color:cfg?.color, borderColor:cfg?.color+"44", background:cfg?.color+"18" }}>{cfg?.symbol} {cfg?.label}</span>
-            <span className="tcard-tag" style={{ color:"var(--text2)", borderColor:"var(--border2)", background:"var(--bg4)" }}>{show.genre}</span>
+          )}
+          {cover && coverStatus[show.id] === "error" && (
+            <div className="cover-miss" aria-hidden="true">
+              <span className="cover-miss-txt">Image failed to load</span>
+            </div>
+          )}
+          <div className="tcard-body">
+            <div className="tcard-dt">{show.premiereDate}</div>
+            <div className="tcard-ti">{show.title}</div>
+            <div className="tcard-row">
+              <span className="tcard-tag" style={{ color: cfg?.color, borderColor: cfg?.color + "44", background: cfg?.color + "18" }}>{cfg?.symbol} {cfg?.label}</span>
+              <span className="tcard-tag" style={{ color: "var(--text2)", borderColor: "var(--border2)", background: "var(--bg4)" }}>{show.genre}</span>
+            </div>
+            {show.score > 0 && <div className="tcard-sc">★ {show.score}</div>}
           </div>
-          {show.score > 0 && <div className="tcard-sc">★ {show.score}</div>}
         </div>
-      </div>
       </button>
     );
   };
