@@ -149,6 +149,25 @@ function timelineItemWidth(item) {
   return TIMELINE_SLOT_WIDTH;
 }
 
+function startOfMonth(date) {
+  const d = new Date(date);
+  d.setDate(1);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function monthKeyFromDate(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function addMonths(date, count) {
+  const d = new Date(date);
+  d.setMonth(d.getMonth() + count);
+  return d;
+}
+
 const STATUS = {
   watching:      { label: "Watching",      color: "#22d3ee", symbol: "▶" },
   completed:     { label: "Completed",     color: "#4ade80", symbol: "✓" },
@@ -418,6 +437,7 @@ export default function App() {
   const [toast, setToast]             = useState(null);  // { ok, msg }
   const toastTimer = useRef(null);
   const timelineRef = useRef(null);
+  const timelinePaneRef = useRef(null);
 
   // ── Inject fonts ──
   useEffect(() => {
@@ -599,32 +619,51 @@ export default function App() {
   );
 
   const timelineItems = useMemo(() => {
-    const items = [];
-    let todayAdded = false;
-    let si = 0;
-    let lastMonthKey = "";
+    const datedBuckets = new Map();
+    const undatedShows = [];
 
     for (const show of filteredSorted) {
       const showDate = new Date(show.premiereDate);
-      const monthKey = Number.isNaN(showDate.getTime())
-        ? "unknown"
-        : `${showDate.getFullYear()}-${String(showDate.getMonth() + 1).padStart(2, "0")}`;
-
-      if (monthKey !== lastMonthKey) {
-        items.push({ type: "month", label: fmtMonthYear(showDate), monthKey });
-        lastMonthKey = monthKey;
+      if (Number.isNaN(showDate.getTime())) {
+        undatedShows.push(show);
+        continue;
       }
-
-      if (!todayAdded && showDate > TODAY) {
-        items.push({ type: "today" });
-        todayAdded = true;
-      }
-
-      items.push({ type: "show", show, isTop: si % 2 === 0 });
-      si++;
+      const key = monthKeyFromDate(showDate);
+      if (!datedBuckets.has(key)) datedBuckets.set(key, []);
+      datedBuckets.get(key).push(show);
     }
 
-    if (!todayAdded) items.push({ type: "today" });
+    const items = [];
+    const datedMonths = [...datedBuckets.keys()].sort();
+    const todayMonth = startOfMonth(TODAY);
+
+    if (!datedMonths.length) {
+      items.push({ type: "month", label: fmtMonthYear(todayMonth), monthKey: monthKeyFromDate(todayMonth) });
+      items.push({ type: "today" });
+    } else {
+      const firstMonth = startOfMonth(new Date(`${datedMonths[0]}-01T00:00:00`));
+      const lastMonth = startOfMonth(new Date(`${datedMonths[datedMonths.length - 1]}-01T00:00:00`));
+      const cursorStart = firstMonth < todayMonth ? firstMonth : todayMonth;
+      const cursorEnd = lastMonth > todayMonth ? lastMonth : todayMonth;
+
+      for (let cursor = new Date(cursorStart); cursor <= cursorEnd; cursor = addMonths(cursor, 1)) {
+        const monthKey = monthKeyFromDate(cursor);
+        items.push({ type: "month", label: fmtMonthYear(cursor), monthKey });
+        if (monthKey === monthKeyFromDate(todayMonth)) items.push({ type: "today" });
+        const monthShows = datedBuckets.get(monthKey) || [];
+        monthShows.forEach((show, index) => {
+          items.push({ type: "show", show, isTop: index % 2 === 0 });
+        });
+      }
+    }
+
+    if (undatedShows.length) {
+      items.push({ type: "month", label: "No date", monthKey: "undated" });
+      undatedShows.forEach((show, index) => {
+        items.push({ type: "show", show, isTop: index % 2 === 0 });
+      });
+    }
+
     return items;
   }, [filteredSorted]);
 
@@ -737,6 +776,7 @@ export default function App() {
           {show.score > 0 && <div className="tcard-sc">★ {show.score}</div>}
         </div>
       </div>
+      </button>
     );
   };
 
@@ -778,6 +818,7 @@ export default function App() {
           <span className="hm-lab">More</span>
         </div>
       </div>
+      </button>
     );
   };
 
@@ -1093,8 +1134,13 @@ export default function App() {
           {/* ── SIDEBAR ── */}
           {page !== "tools" && shows.length > 0 && (
             <aside className="sidebar">
-              <div className="sb-title">Filter by Status</div>
-              {Object.entries(STATUS).map(([key, cfg]) => (
+              <div className="sb-head">
+                <div className="sb-title">Filter by Status</div>
+                <button className="sb-toggle" onClick={() => setStatusFilterOpen((v) => !v)}>
+                  {statusFilterOpen ? "Collapse" : "Expand"}
+                </button>
+              </div>
+              {statusFilterOpen && Object.entries(STATUS).map(([key, cfg]) => (
                 <label key={key} className="sf">
                   <div className="sf-dot" style={{ background: cfg.color }} />
                   <span className="sf-lbl">{cfg.label}</span>
@@ -1108,6 +1154,40 @@ export default function App() {
           )}
         </div>
       </div>
+
+
+      {selectedShow && (
+        <div className="detail-ov" onClick={() => setSelectedShow(null)}>
+          <div className="detail-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="detail-head">
+              <div>
+                <h2 className="detail-title">{selectedShow.title}</h2>
+                <div className="detail-sub">{STATUS[selectedShow.status]?.label || selectedShow.status} · {fmtFull(selectedShow.premiereDate) || "Date unknown"}</div>
+              </div>
+              <button className="detail-close" onClick={() => setSelectedShow(null)}>Close</button>
+            </div>
+            <div className="detail-body">
+              <img className="detail-cover" src={getCover(selectedShow) || coverPh(selectedShow)} alt={selectedShow.title} onError={() => setCoverErr((m) => ({ ...m, [selectedShow.id]: true }))} />
+              <div>
+                <div className="detail-grid">
+                  <div className="detail-kv"><div className="detail-k">Status</div><div className="detail-v">{STATUS[selectedShow.status]?.label || "—"}</div></div>
+                  <div className="detail-kv"><div className="detail-k">Score</div><div className="detail-v">{selectedShow.score || "—"}</div></div>
+                  <div className="detail-kv"><div className="detail-k">Episodes</div><div className="detail-v">{selectedShow.episodes || "—"}</div></div>
+                  <div className="detail-kv"><div className="detail-k">Year</div><div className="detail-v">{selectedShow.year || "—"}</div></div>
+                  <div className="detail-kv"><div className="detail-k">Genres</div><div className="detail-v">{selectedShow.genre || selectedShow._raw?.genres?.map?.((g) => g.name || g).join?.(", ") || "—"}</div></div>
+                  <div className="detail-kv"><div className="detail-k">Studio</div><div className="detail-v">{selectedShow.studio || selectedShow._raw?.studios?.map?.((s) => s.name || s).join?.(", ") || "—"}</div></div>
+                  <div className="detail-kv"><div className="detail-k">Type</div><div className="detail-v">{selectedShow._raw?.media_type || selectedShow._raw?.type || "—"}</div></div>
+                  <div className="detail-kv"><div className="detail-k">Source</div><div className="detail-v">{selectedShow._raw?.source || "—"}</div></div>
+                </div>
+                <div className="detail-copy">
+                  <strong>Synopsis</strong>
+                  <p>{selectedShow._raw?.synopsis || selectedShow._raw?.background || "No synopsis available for this entry."}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── TOAST ── */}
       {toast && (
