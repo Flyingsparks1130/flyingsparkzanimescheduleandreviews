@@ -124,6 +124,13 @@ function extractShows(apiData) {
 const TODAY = new Date();
 const TIMELINE_SLOT_WIDTH = 208;
 const TODAY_MARKER_WIDTH = 52;
+const MONTH_MARKER_WIDTH = 88;
+
+function fmtMonthYear(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+}
 
 function fmtFull(value) {
   const date = value instanceof Date ? value : new Date(value);
@@ -134,6 +141,12 @@ function fmtFull(value) {
     month: "short",
     day: "numeric",
   });
+}
+
+function timelineItemWidth(item) {
+  if (item.type === "today") return TODAY_MARKER_WIDTH;
+  if (item.type === "month") return MONTH_MARKER_WIDTH;
+  return TIMELINE_SLOT_WIDTH;
 }
 
 const STATUS = {
@@ -206,7 +219,7 @@ body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;font
 .ntab{padding:.28rem .85rem;background:transparent;border:1px solid transparent;border-radius:6px;color:var(--text2);font-family:'Syne',sans-serif;font-size:.78rem;font-weight:700;cursor:pointer;transition:all .1s}
 .ntab:hover{color:var(--text);background:var(--bg3)}
 .ntab.on{color:var(--text);background:var(--bg3);border-color:var(--border2)}
-.nav-ct{margin-left:auto;font-size:.7rem;color:var(--text3);display:flex;align-items:center;gap:.55rem}
+.nav-ct{margin-left:auto;font-size:.7rem;color:var(--text3);display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;justify-content:flex-end}
 .nav-refresh{padding:2px 7px;background:transparent;border:1px solid var(--border2);border-radius:5px;color:var(--text3);font-size:.68rem;cursor:pointer;transition:all .15s;font-family:'Outfit',sans-serif}
 .nav-refresh:hover{color:var(--text);border-color:var(--accent)}
 .nav-refresh:disabled{opacity:.4;cursor:wait}
@@ -246,7 +259,7 @@ body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;font
 @keyframes toastIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 
 /* TIMELINE */
-.tl-scroll{overflow-x:auto;overflow-y:hidden;white-space:nowrap;scroll-behavior:smooth;padding:0 1.6rem 1.5rem}
+.tl-scroll{overflow-x:auto;overflow-y:hidden;white-space:nowrap;scroll-behavior:smooth;padding:0 1.6rem 1.5rem;cursor:ew-resize}
 .tl-slots{display:flex;min-width:max-content;position:relative}
 .tl-slots::after{content:'';position:absolute;top:calc(284px + 19px);left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent),var(--accent2));z-index:0;pointer-events:none}
 .tslot{width:208px;flex-shrink:0;display:flex;flex-direction:column}
@@ -263,6 +276,13 @@ body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;font
 .today-cdot{width:11px;height:11px;border-radius:50%;background:#f06595;border:2px solid var(--bg);box-shadow:0 0 10px #f06595;flex-shrink:0}
 .today-vlb{flex:1;width:2px;background:rgba(240,101,149,.3)}
 .today-btm{height:284px}
+.month-slot{width:88px;flex-shrink:0;display:flex;flex-direction:column;align-items:center}
+.month-top{height:284px;padding:0 6px 10px;display:flex;align-items:flex-end;justify-content:center}
+.month-label{font-family:'Syne',sans-serif;font-size:.64rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text2);background:rgba(126,92,255,.08);border:1px solid rgba(126,92,255,.18);padding:4px 8px;border-radius:999px;white-space:nowrap}
+.month-conn{height:38px;display:flex;flex-direction:column;align-items:center;z-index:1}
+.month-vl{flex:1;width:1px;background:rgba(126,92,255,.24)}
+.month-dot{width:10px;height:10px;border-radius:50%;border:2px solid var(--bg);background:linear-gradient(135deg,var(--accent),var(--accent2));flex-shrink:0}
+.month-btm{height:284px}
 .tcard{width:190px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;cursor:default;transition:all .14s ease}
 .tcard:hover{background:var(--bg4);transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.4)}
 .tcard-img{width:100%;height:114px;object-fit:cover;object-position:top center;display:block}
@@ -414,7 +434,7 @@ export default function App() {
     const onWheel = (e) => {
       if (Math.abs(e.deltaY) > 0) {
         e.preventDefault();
-        el.scrollLeft += e.deltaY;
+        el.scrollLeft -= e.deltaY;
       }
     };
 
@@ -580,29 +600,56 @@ export default function App() {
 
   const timelineItems = useMemo(() => {
     const items = [];
-    let todayAdded = false, si = 0;
+    let todayAdded = false;
+    let si = 0;
+    let lastMonthKey = "";
+
     for (const show of filteredSorted) {
-      if (!todayAdded && new Date(show.premiereDate) > TODAY) { items.push({ type: "today" }); todayAdded = true; }
+      const showDate = new Date(show.premiereDate);
+      const monthKey = Number.isNaN(showDate.getTime())
+        ? "unknown"
+        : `${showDate.getFullYear()}-${String(showDate.getMonth() + 1).padStart(2, "0")}`;
+
+      if (monthKey !== lastMonthKey) {
+        items.push({ type: "month", label: fmtMonthYear(showDate), monthKey });
+        lastMonthKey = monthKey;
+      }
+
+      if (!todayAdded && showDate > TODAY) {
+        items.push({ type: "today" });
+        todayAdded = true;
+      }
+
       items.push({ type: "show", show, isTop: si % 2 === 0 });
       si++;
     }
+
+    if (!todayAdded) items.push({ type: "today" });
     return items;
   }, [filteredSorted]);
 
-  useEffect(() => {
+  const scrollToToday = useCallback(() => {
     const el = timelineRef.current;
     if (!el || !timelineItems.length) return;
 
     const todayIndex = timelineItems.findIndex((item) => item.type === "today");
     if (todayIndex === -1) return;
 
+    const beforeWidth = timelineItems
+      .slice(0, todayIndex)
+      .reduce((sum, item) => sum + timelineItemWidth(item), 0);
+
     const targetLeft = Math.max(
       0,
-      todayIndex * TIMELINE_SLOT_WIDTH - el.clientWidth / 2 + TIMELINE_SLOT_WIDTH / 2 + TODAY_MARKER_WIDTH / 2
+      beforeWidth - el.clientWidth / 2 + TODAY_MARKER_WIDTH / 2
     );
 
-    el.scrollLeft = targetLeft;
+    el.scrollTo({ left: targetLeft, behavior: "smooth" });
   }, [timelineItems]);
+
+  useEffect(() => {
+    scrollToToday();
+  }, [scrollToToday]);
 
   const scoredShows = useMemo(() =>
     shows.filter(s => s.score > 0 && statusFilter.has(s.status)), [statusFilter, shows]
@@ -754,6 +801,14 @@ export default function App() {
           <span className="nav-ct">
             {shows.length} shows tracked
             <button
+              className="nav-refresh"
+              onClick={scrollToToday}
+              disabled={dataLoading || !shows.length}
+              title="Jump to today"
+            >
+              Today
+            </button>
+            <button
               className={`nav-refresh${refreshing ? " spinning" : ""}`}
               onClick={() => loadShows(true)}
               disabled={refreshing || dataLoading}
@@ -792,11 +847,20 @@ export default function App() {
               <div>
                 <div className="ph">
                   <h1>My Anime Timeline</h1>
-                  <p>{filteredSorted.length} shows · sorted by premiere date · scroll right →</p>
+                  <p>{filteredSorted.length} shows · sorted by premiere date · wheel up = pan right · wheel down = pan left</p>
                 </div>
                 <div ref={timelineRef} className="tl-scroll">
                   <div className="tl-slots">
-                    {timelineItems.map((item) => {
+                    {timelineItems.map((item, index) => {
+                      if (item.type === "month") return (
+                        <div key={`month-${item.monthKey}-${index}`} className="month-slot">
+                          <div className="month-top"><div className="month-label">{item.label}</div></div>
+                          <div className="month-conn">
+                            <div className="month-vl" /><div className="month-dot" title={item.label} /><div className="month-vl" />
+                          </div>
+                          <div className="month-btm" />
+                        </div>
+                      );
                       if (item.type === "today") return (
                         <div key="today" className="today-slot">
                           <div className="today-top"><div className="today-tag">Today</div></div>
