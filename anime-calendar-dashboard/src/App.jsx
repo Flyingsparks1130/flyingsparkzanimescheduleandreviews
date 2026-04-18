@@ -1,10 +1,107 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import {
   ScatterChart, Scatter, XAxis, YAxis, ZAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from "recharts";
 
-const TODAY = new Date("2026-04-18");
+/* ═══════════════════════════════════════════
+   BACKEND API  (embedded from client.js)
+   ═══════════════════════════════════════════ */
+const API_BASE = "https://script.google.com/macros/s/AKfycbw5-yXcXE3vfgxOFPftoDfcQUlzZyvc9rsw5j5gZFjLXSOcvs7fJxt_crOwqegZ3omu/exec";
+
+async function parseApiResponse(res, fallbackMessage) {
+  const text = await res.text();
+  let data;
+  try { data = text ? JSON.parse(text) : {}; }
+  catch { throw new Error(`${fallbackMessage}: ${text || res.statusText}`); }
+  if (!res.ok) throw new Error(data.error || `${fallbackMessage} (${res.status})`);
+  if (data && data.ok === false) throw new Error(data.error || fallbackMessage);
+  return data;
+}
+
+async function fetchAnimeList(status = "", forceRefresh = false) {
+  const params = new URLSearchParams({ action: "anime-list" });
+  if (status) params.set("status", status);
+  if (forceRefresh) params.set("refresh", "1");
+  const res = await fetch(`${API_BASE}?${params.toString()}`, { method: "GET" });
+  return parseApiResponse(res, "Failed to fetch anime list");
+}
+
+async function fetchAuthUrl() {
+  const res = await fetch(`${API_BASE}?action=auth-url`, { method: "GET" });
+  return parseApiResponse(res, "Failed to fetch auth url");
+}
+
+async function syncSelectedShows(selectedShows) {
+  const res = await fetch(API_BASE, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ action: "sync-selected", shows: selectedShows })
+  });
+  return parseApiResponse(res, "Failed to sync selected shows");
+}
+
+/* ═══════════════════════════════════════════
+   DATA NORMALIZER
+   Maps any common MAL/backend field format
+   to our internal schema
+   ═══════════════════════════════════════════ */
+function normalizeStatus(raw) {
+  if (!raw) return "plan_to_watch";
+  const s = String(raw).toLowerCase().trim().replace(/[\s-]+/g, "_");
+  const MAP = {
+    watching: "watching", "currently_watching": "watching",
+    completed: "completed", complete: "completed",
+    plan_to_watch: "plan_to_watch", "planning": "plan_to_watch", ptw: "plan_to_watch",
+    on_hold: "on_hold", paused: "on_hold",
+    dropped: "dropped",
+  };
+  return MAP[s] ?? "plan_to_watch";
+}
+
+function normalizeShow(raw, idx) {
+  const title = raw.title || raw.anime_title || raw.name || "Untitled";
+  const status = normalizeStatus(raw.status || raw.my_status || raw.watching_status);
+  const score  = Number(raw.score ?? raw.my_score ?? 0);
+  const genre  = raw.genre || raw.genres || (Array.isArray(raw.anime_genres) ? raw.anime_genres.join(", ") : raw.anime_genres) || "";
+  const studio = raw.studio || raw.studios || (Array.isArray(raw.anime_studios) ? raw.anime_studios.join(", ") : raw.anime_studios) || "";
+  const eps    = Number(raw.episodes ?? raw.num_episodes ?? raw.anime_num_episodes ?? 0);
+
+  let premiereDate = raw.premiereDate || raw.premiere_date || raw.start_date || raw.anime_start_date || "";
+  if (premiereDate && premiereDate.length === 10 && !premiereDate.includes("-")) {
+    // Handle possible date formats
+    premiereDate = premiereDate;
+  }
+
+  let year = Number(raw.year || raw.start_year || 0);
+  if (!year && premiereDate) {
+    const parsed = new Date(premiereDate);
+    if (!isNaN(parsed)) year = parsed.getFullYear();
+  }
+
+  return {
+    id: raw.id || raw.mal_id || raw.anime_id || idx + 1,
+    title, status, score, genre, studio, year, premiereDate, episodes: eps,
+    // preserve raw object for sync payload
+    _raw: raw
+  };
+}
+
+function extractShows(apiData) {
+  // Handle different response shapes
+  const arr = Array.isArray(apiData) ? apiData
+    : Array.isArray(apiData?.anime) ? apiData.anime
+    : Array.isArray(apiData?.data) ? apiData.data
+    : Array.isArray(apiData?.list) ? apiData.list
+    : Array.isArray(apiData?.shows) ? apiData.shows
+    : [];
+  return arr.map((raw, i) => normalizeShow(raw, i));
+}
+
+/* ═══════════════════════════════════════════
+   CONSTANTS
+   ═══════════════════════════════════════════ */
+const TODAY = new Date();
 
 const STATUS = {
   watching:      { label: "Watching",      color: "#22d3ee", symbol: "▶" },
@@ -13,37 +110,6 @@ const STATUS = {
   on_hold:       { label: "On Hold",       color: "#fbbf24", symbol: "⏸" },
   dropped:       { label: "Dropped",       color: "#f87171", symbol: "✕" },
 };
-
-const SHOWS = [
-  { id:1,  title:"Frieren: Beyond Journey's End",    status:"completed",     score:9.4, genre:"Fantasy",       studio:"Madhouse",          year:2023, premiereDate:"2023-09-29", episodes:28 },
-  { id:2,  title:"Jujutsu Kaisen S2",                status:"completed",     score:9.0, genre:"Action",        studio:"MAPPA",             year:2023, premiereDate:"2023-07-06", episodes:23 },
-  { id:3,  title:"Vinland Saga S2",                  status:"completed",     score:9.2, genre:"Historical",    studio:"MAPPA",             year:2023, premiereDate:"2023-01-10", episodes:24 },
-  { id:4,  title:"Attack on Titan: The Final Bow",   status:"completed",     score:9.5, genre:"Action",        studio:"MAPPA",             year:2023, premiereDate:"2023-03-04", episodes:12 },
-  { id:5,  title:"Demon Slayer: Swordsmith Village",  status:"completed",    score:8.9, genre:"Action",        studio:"ufotable",          year:2023, premiereDate:"2023-04-09", episodes:11 },
-  { id:6,  title:"Oshi no Ko",                       status:"completed",     score:8.7, genre:"Drama",         studio:"Doga Kobo",         year:2023, premiereDate:"2023-04-12", episodes:11 },
-  { id:7,  title:"Mushoku Tensei S2",                status:"completed",     score:8.8, genre:"Fantasy",       studio:"Studio Bind",       year:2023, premiereDate:"2023-07-02", episodes:12 },
-  { id:8,  title:"Dungeon Meshi",                    status:"completed",     score:9.1, genre:"Fantasy",       studio:"Trigger",           year:2024, premiereDate:"2024-01-04", episodes:24 },
-  { id:9,  title:"Dandadan",                         status:"completed",     score:8.6, genre:"Supernatural",  studio:"Science SARU",      year:2024, premiereDate:"2024-10-03", episodes:12 },
-  { id:10, title:"Wind Breaker",                     status:"completed",     score:7.8, genre:"Sports",        studio:"CloverWorks",       year:2024, premiereDate:"2024-04-06", episodes:25 },
-  { id:11, title:"Kaiju No. 8",                      status:"completed",     score:8.0, genre:"Action",        studio:"Production I.G",    year:2024, premiereDate:"2024-04-13", episodes:12 },
-  { id:12, title:"Tower of God S2",                  status:"completed",     score:7.5, genre:"Fantasy",       studio:"Telecom Anim.",     year:2024, premiereDate:"2024-07-07", episodes:13 },
-  { id:13, title:"My Hero Academia S7",              status:"dropped",       score:6.5, genre:"Action",        studio:"Bones",             year:2024, premiereDate:"2024-05-04", episodes:21 },
-  { id:14, title:"Blue Lock S2",                     status:"watching",      score:8.4, genre:"Sports",        studio:"8-Bit",             year:2024, premiereDate:"2024-10-05", episodes:26 },
-  { id:15, title:"Re:Zero S3",                       status:"watching",      score:8.7, genre:"Fantasy",       studio:"White Fox",         year:2024, premiereDate:"2024-10-02", episodes:25 },
-  { id:16, title:"Monogatari: Off & Monster",        status:"watching",      score:8.5, genre:"Supernatural",  studio:"Shaft",             year:2024, premiereDate:"2024-10-05", episodes:13 },
-  { id:17, title:"Shangri-La Frontier S2",           status:"watching",      score:8.1, genre:"Sci-Fi",        studio:"C2C",               year:2024, premiereDate:"2024-10-06", episodes:25 },
-  { id:18, title:"Mahou Shoujo ni Akogarete",        status:"on_hold",       score:7.2, genre:"Comedy",        studio:"Asahi Production",  year:2024, premiereDate:"2024-01-05", episodes:12 },
-  { id:19, title:"Yuzuki-san Yonkyoudai",            status:"on_hold",       score:7.9, genre:"Slice of Life", studio:"SynergySP",         year:2024, premiereDate:"2024-10-13", episodes:25 },
-  { id:20, title:"Solo Leveling S2",                 status:"watching",      score:8.2, genre:"Action",        studio:"A-1 Pictures",      year:2025, premiereDate:"2025-01-05", episodes:13 },
-  { id:21, title:"Sakamoto Days",                    status:"watching",      score:8.5, genre:"Action",        studio:"TMS Entertainment", year:2025, premiereDate:"2025-01-11", episodes:24 },
-  { id:22, title:"Neon Genesis Evangelion",          status:"completed",     score:9.0, genre:"Mecha",         studio:"Gainax",            year:2019, premiereDate:"2019-06-21", episodes:26 },
-  { id:23, title:"Sousou no Frieren Movie",          status:"plan_to_watch", score:0,   genre:"Fantasy",       studio:"Madhouse",          year:2025, premiereDate:"2025-04-20", episodes:1  },
-  { id:24, title:"Re:Zero S3 Part 2",                status:"plan_to_watch", score:0,   genre:"Fantasy",       studio:"White Fox",         year:2025, premiereDate:"2025-04-02", episodes:13 },
-  { id:25, title:"Bleach: TYBW Final",               status:"plan_to_watch", score:0,   genre:"Action",        studio:"Pierrot",           year:2025, premiereDate:"2025-07-04", episodes:13 },
-  { id:26, title:"Spy x Family S3",                  status:"plan_to_watch", score:0,   genre:"Comedy",        studio:"Wit Studio",        year:2025, premiereDate:"2025-07-12", episodes:12 },
-  { id:27, title:"Chainsaw Man S2",                  status:"plan_to_watch", score:0,   genre:"Action",        studio:"MAPPA",             year:2025, premiereDate:"2025-10-01", episodes:12 },
-  { id:28, title:"Kimi no Na wa 2",                  status:"plan_to_watch", score:0,   genre:"Romance",       studio:"CoMix Wave",        year:2025, premiereDate:"2025-05-01", episodes:1  },
-];
 
 function episodesBin(n) {
   if (n <= 1) return "Film";
@@ -84,6 +150,9 @@ const FIXED_ORDER = {
   episodes: ["Film", "Short (≤13)", "Medium (14–26)", "Long (26+)"],
 };
 
+/* ═══════════════════════════════════════════
+   STYLES
+   ═══════════════════════════════════════════ */
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Outfit:wght@300;400;500;600&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -104,7 +173,12 @@ body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;font
 .ntab{padding:.28rem .85rem;background:transparent;border:1px solid transparent;border-radius:6px;color:var(--text2);font-family:'Syne',sans-serif;font-size:.78rem;font-weight:700;cursor:pointer;transition:all .1s}
 .ntab:hover{color:var(--text);background:var(--bg3)}
 .ntab.on{color:var(--text);background:var(--bg3);border-color:var(--border2)}
-.nav-ct{margin-left:auto;font-size:.7rem;color:var(--text3)}
+.nav-ct{margin-left:auto;font-size:.7rem;color:var(--text3);display:flex;align-items:center;gap:.55rem}
+.nav-refresh{padding:2px 7px;background:transparent;border:1px solid var(--border2);border-radius:5px;color:var(--text3);font-size:.68rem;cursor:pointer;transition:all .15s;font-family:'Outfit',sans-serif}
+.nav-refresh:hover{color:var(--text);border-color:var(--accent)}
+.nav-refresh:disabled{opacity:.4;cursor:wait}
+@keyframes spin{to{transform:rotate(360deg)}}
+.nav-refresh.spinning{animation:spin .8s linear infinite}
 .sidebar{width:192px;flex-shrink:0;background:var(--bg2);border-left:1px solid var(--border);padding:1.1rem .9rem;display:flex;flex-direction:column;gap:.28rem;overflow-y:auto}
 .sb-title{font-family:'Syne',sans-serif;font-size:.62rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);padding:0 .3rem .1rem}
 .sf{display:flex;align-items:center;gap:.45rem;padding:.38rem .45rem;border-radius:7px;cursor:pointer;user-select:none;transition:background .1s}
@@ -119,6 +193,24 @@ body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;font
 .ph{padding:1.4rem 1.6rem .9rem}
 .ph h1{font-family:'Syne',sans-serif;font-size:1.4rem;font-weight:800;color:var(--text);letter-spacing:-.025em;margin-bottom:.15rem}
 .ph p{font-size:.8rem;color:var(--text2)}
+
+/* LOADING / ERROR */
+.load-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:280px;gap:.9rem}
+.load-spinner{width:28px;height:28px;border:2.5px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
+.load-text{font-size:.82rem;color:var(--text3)}
+.err-box{margin:1.5rem 1.6rem;padding:1.1rem 1.4rem;background:rgba(248,113,113,.06);border:1px solid rgba(248,113,113,.2);border-radius:var(--r);display:flex;align-items:flex-start;gap:.8rem}
+.err-icon{font-size:1.3rem;flex-shrink:0;margin-top:1px}
+.err-body{flex:1}
+.err-title{font-family:'Syne',sans-serif;font-weight:700;font-size:.85rem;color:#f87171;margin-bottom:.2rem}
+.err-msg{font-size:.77rem;color:var(--text2);line-height:1.5;word-break:break-word}
+.err-retry{margin-top:.6rem;padding:.32rem .75rem;background:transparent;border:1px solid rgba(248,113,113,.3);border-radius:5px;color:#f87171;font-family:'Syne',sans-serif;font-size:.73rem;font-weight:700;cursor:pointer;transition:all .12s}
+.err-retry:hover{background:rgba(248,113,113,.08);border-color:rgba(248,113,113,.5)}
+
+/* TOAST */
+.toast{position:fixed;bottom:1.5rem;right:1.5rem;padding:.7rem 1.1rem;border-radius:8px;font-size:.8rem;font-weight:500;color:#fff;box-shadow:0 6px 28px rgba(0,0,0,.4);z-index:999;animation:toastIn .3s ease;max-width:340px}
+.toast.ok{background:rgba(74,222,128,.18);border:1px solid rgba(74,222,128,.35);color:#4ade80}
+.toast.fail{background:rgba(248,113,113,.14);border:1px solid rgba(248,113,113,.3);color:#f87171}
+@keyframes toastIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 
 /* TIMELINE */
 .tl-scroll{overflow-x:auto;padding:0 1.6rem 1.5rem}
@@ -236,6 +328,9 @@ body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;font
 .sync-btn{width:100%;padding:.62rem;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:7px;color:#fff;font-family:'Syne',sans-serif;font-size:.8rem;font-weight:700;cursor:pointer;letter-spacing:.02em;transition:opacity .12s,transform .12s}
 .sync-btn:hover{opacity:.9;transform:translateY(-1px)}
 .sync-btn:disabled{opacity:.5;cursor:wait;transform:none}
+.sync-msg{text-align:center;font-size:.73rem;padding:.3rem 0 0;color:var(--text3)}
+.sync-msg.ok{color:#4ade80}
+.sync-msg.fail{color:#f87171}
 .exp-grid{display:grid;grid-template-columns:repeat(3,1fr)}
 .exp-item{padding:1.5rem;display:flex;flex-direction:column;align-items:center;gap:.4rem;border-right:1px solid var(--border);cursor:pointer;transition:background .1s}
 .exp-item:last-child{border-right:none}
@@ -245,18 +340,31 @@ body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;font
 .exp-desc{font-size:.68rem;color:var(--text2);text-align:center}
 `;
 
+/* ═══════════════════════════════════════════
+   COMPONENT
+   ═══════════════════════════════════════════ */
 export default function App() {
-  const [page, setPage] = useState("timeline");
-  const [statusFilter, setStatusFilter] = useState(new Set(Object.keys(STATUS)));
-  const [xAxis, setXAxis] = useState("genre");
-  const [heatmap, setHeatmap] = useState(false);
-  const [insights, setInsights] = useState("");
-  const [insightsLoading, setInsightsLoading] = useState(false);
-  const [calTab, setCalTab] = useState("sync");
-  const [calSyncing, setCalSyncing] = useState(false);
-  const [covers, setCovers] = useState({});
+  // ── Data state (from backend) ──
+  const [shows, setShows]             = useState([]);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [dataError, setDataError]     = useState(null);
+  const [refreshing, setRefreshing]   = useState(false);
 
-  // inject fonts
+  // ── UI state ──
+  const [page, setPage]               = useState("timeline");
+  const [statusFilter, setStatusFilter] = useState(new Set(Object.keys(STATUS)));
+  const [xAxis, setXAxis]             = useState("genre");
+  const [heatmap, setHeatmap]         = useState(false);
+  const [insights, setInsights]       = useState("");
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [calTab, setCalTab]           = useState("sync");
+  const [calSyncing, setCalSyncing]   = useState(false);
+  const [syncResult, setSyncResult]   = useState(null); // { ok, msg }
+  const [covers, setCovers]           = useState({});
+  const [toast, setToast]             = useState(null);  // { ok, msg }
+  const toastTimer = useRef(null);
+
+  // ── Inject fonts ──
   useEffect(() => {
     const link = document.createElement("link");
     link.rel = "stylesheet";
@@ -264,8 +372,36 @@ export default function App() {
     document.head.appendChild(link);
   }, []);
 
-  // fetch covers from Jikan in batches (3 requests/1.1s for rate limit)
+  // ── Show toast helper ──
+  const showToast = useCallback((ok, msg) => {
+    setToast({ ok, msg });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  // ── Fetch anime list from backend ──
+  const loadShows = useCallback(async (forceRefresh = false) => {
+    try {
+      if (forceRefresh) setRefreshing(true); else setDataLoading(true);
+      setDataError(null);
+      const result = await fetchAnimeList("", forceRefresh);
+      const normalized = extractShows(result);
+      setShows(normalized);
+      if (forceRefresh) showToast(true, `Refreshed — ${normalized.length} shows loaded`);
+    } catch (err) {
+      setDataError(err.message || "Failed to load anime list");
+      if (forceRefresh) showToast(false, err.message);
+    } finally {
+      setDataLoading(false);
+      setRefreshing(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => { loadShows(); }, [loadShows]);
+
+  // ── Fetch covers from Jikan (runs after shows load) ──
   useEffect(() => {
+    if (!shows.length) return;
     let cancelled = false;
     async function fetchBatch(batch) {
       const pairs = await Promise.all(batch.map(async (show) => {
@@ -278,21 +414,63 @@ export default function App() {
       return Object.fromEntries(pairs.filter(([, v]) => v));
     }
     async function run() {
-      for (let i = 0; i < SHOWS.length; i += 3) {
+      for (let i = 0; i < shows.length; i += 3) {
         if (cancelled) return;
-        const partial = await fetchBatch(SHOWS.slice(i, i + 3));
+        const partial = await fetchBatch(shows.slice(i, i + 3));
         if (!cancelled) setCovers(prev => ({ ...prev, ...partial }));
-        if (i + 3 < SHOWS.length && !cancelled) await new Promise(r => setTimeout(r, 1100));
+        if (i + 3 < shows.length && !cancelled) await new Promise(r => setTimeout(r, 1100));
       }
     }
     run();
     return () => { cancelled = true; };
-  }, []);
+  }, [shows]);
 
+  // ── Real Google Calendar sync ──
+  async function handleSync(toSync) {
+    setCalSyncing(true);
+    setSyncResult(null);
+    try {
+      // Send _raw objects (original backend format) for the sync payload
+      const payload = toSync.map(s => s._raw || {
+        title: s.title,
+        status: s.status,
+        score: s.score,
+        genre: s.genre,
+        studio: s.studio,
+        year: s.year,
+        premiereDate: s.premiereDate,
+        episodes: s.episodes,
+      });
+      const result = await syncSelectedShows(payload);
+      const msg = result?.message || result?.msg || `${toSync.length} shows synced successfully`;
+      setSyncResult({ ok: true, msg });
+      showToast(true, msg);
+    } catch (err) {
+      // If auth is needed, try to get auth URL
+      const isAuth = /auth|login|unauthorized|token|permission/i.test(err.message);
+      if (isAuth) {
+        try {
+          const authData = await fetchAuthUrl();
+          const url = authData?.url || authData?.authUrl;
+          if (url) {
+            setSyncResult({ ok: false, msg: "Google authorization required. Opening login…" });
+            window.open(url, "_blank", "noopener");
+            return;
+          }
+        } catch {}
+      }
+      setSyncResult({ ok: false, msg: err.message });
+      showToast(false, err.message);
+    } finally {
+      setCalSyncing(false);
+    }
+  }
+
+  // ── Derived data (all use `shows` state instead of hardcoded SHOWS) ──
   const filteredSorted = useMemo(() =>
-    SHOWS.filter(s => statusFilter.has(s.status))
+    shows.filter(s => statusFilter.has(s.status))
          .sort((a, b) => new Date(a.premiereDate) - new Date(b.premiereDate)),
-    [statusFilter]
+    [statusFilter, shows]
   );
 
   const timelineItems = useMemo(() => {
@@ -307,7 +485,7 @@ export default function App() {
   }, [filteredSorted]);
 
   const scoredShows = useMemo(() =>
-    SHOWS.filter(s => s.score > 0 && statusFilter.has(s.status)), [statusFilter]
+    shows.filter(s => s.score > 0 && statusFilter.has(s.status)), [statusFilter, shows]
   );
 
   const { plotData, xCategories, xDomain, xTickVals } = useMemo(() => {
@@ -354,7 +532,7 @@ export default function App() {
     finally { setInsightsLoading(false); }
   }
 
-  const counts = Object.fromEntries(Object.keys(STATUS).map(k => [k, SHOWS.filter(s => s.status === k).length]));
+  const counts = Object.fromEntries(Object.keys(STATUS).map(k => [k, shows.filter(s => s.status === k).length]));
   const xLabel = XAXIS_OPTIONS.find(o => o.id === xAxis)?.label ?? xAxis;
 
   // ── Timeline Card ──
@@ -387,7 +565,7 @@ export default function App() {
     const maxCount = Math.max(1, ...heatmapCats.flatMap(cat =>
       SCORE_BUCKETS.map(b => scoredShows.filter(s => getXVal(s, xAxis) === cat && b.test(s)).length)
     ));
-    const rowW = Math.min(165, Math.max(85, Math.max(...heatmapCats.map(c => c.length)) * 7.8 + 18));
+    const rowW = Math.min(165, Math.max(85, Math.max(...(heatmapCats.length ? heatmapCats.map(c => c.length) : [6])) * 7.8 + 18));
     return (
       <div className="hm-wrap">
         <div className="hm-title">Score distribution · by {xLabel}</div>
@@ -423,6 +601,9 @@ export default function App() {
     );
   };
 
+  /* ═══════════════════════════════════════════
+     RENDER
+     ═══════════════════════════════════════════ */
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
@@ -437,14 +618,44 @@ export default function App() {
               <button key={id} className={`ntab${page === id ? " on" : ""}`} onClick={() => setPage(id)}>{lbl}</button>
             ))}
           </div>
-          <span className="nav-ct">{SHOWS.length} shows tracked</span>
+          <span className="nav-ct">
+            {shows.length} shows tracked
+            <button
+              className={`nav-refresh${refreshing ? " spinning" : ""}`}
+              onClick={() => loadShows(true)}
+              disabled={refreshing || dataLoading}
+              title="Refresh from MAL"
+            >
+              ↻
+            </button>
+          </span>
         </nav>
 
         <div className="app-body">
           <div className="main-area">
 
-            {/* TIMELINE */}
-            {page === "timeline" && (
+            {/* ── LOADING STATE ── */}
+            {dataLoading && !shows.length && (
+              <div className="load-wrap">
+                <div className="load-spinner" />
+                <div className="load-text">Loading your anime list…</div>
+              </div>
+            )}
+
+            {/* ── ERROR STATE ── */}
+            {dataError && !shows.length && (
+              <div className="err-box">
+                <div className="err-icon">⚠</div>
+                <div className="err-body">
+                  <div className="err-title">Failed to load</div>
+                  <div className="err-msg">{dataError}</div>
+                  <button className="err-retry" onClick={() => loadShows()}>Try again</button>
+                </div>
+              </div>
+            )}
+
+            {/* ── TIMELINE ── */}
+            {page === "timeline" && !dataLoading && shows.length > 0 && (
               <div>
                 <div className="ph">
                   <h1>My Anime Timeline</h1>
@@ -480,14 +691,13 @@ export default function App() {
               </div>
             )}
 
-            {/* ANALYTICS */}
-            {page === "analytics" && (
+            {/* ── ANALYTICS ── */}
+            {page === "analytics" && !dataLoading && shows.length > 0 && (
               <div className="analytics-page">
                 <div className="ph">
                   <h1>Score Analysis</h1>
                   <p>Explore your ratings across different dimensions</p>
                 </div>
-
                 <div className="ctrl-bar">
                   <span className="ctrl-lbl">X Axis</span>
                   {XAXIS_OPTIONS.map(opt => (
@@ -583,8 +793,8 @@ export default function App() {
               </div>
             )}
 
-            {/* TOOLS */}
-            {page === "tools" && (
+            {/* ── TOOLS ── */}
+            {page === "tools" && !dataLoading && (
               <div className="tools-page">
                 <div className="ph"><h1>Tools</h1><p>Calendar sync and export utilities</p></div>
                 <div className="subtabs">
@@ -594,7 +804,7 @@ export default function App() {
                 </div>
 
                 {calTab === "sync" && (() => {
-                  const toSync = SHOWS.filter(s => s.status === "watching" || s.status === "plan_to_watch");
+                  const toSync = shows.filter(s => s.status === "watching" || s.status === "plan_to_watch");
                   return (
                     <div className="cpanel">
                       <div className="cp-hero">
@@ -602,7 +812,7 @@ export default function App() {
                         <div><h3>Google Calendar Sync</h3><p>Push your watching & upcoming shows into Google Calendar as events.</p></div>
                       </div>
                       <div className="cp-stats">
-                        {[[toSync.length,"Ready to sync"],[SHOWS.filter(s=>s.status==="watching").length,"Currently watching"],[SHOWS.filter(s=>s.status==="plan_to_watch").length,"Planned"]].map(([v,l])=>(
+                        {[[toSync.length,"Ready to sync"],[shows.filter(s=>s.status==="watching").length,"Currently watching"],[shows.filter(s=>s.status==="plan_to_watch").length,"Planned"]].map(([v,l])=>(
                           <div key={l} className="cp-stat"><strong>{v}</strong><span>{l}</span></div>
                         ))}
                       </div>
@@ -626,9 +836,16 @@ export default function App() {
                         })}
                       </div>
                       <div className="cp-foot">
-                        <button className="sync-btn" onClick={() => { setCalSyncing(true); setTimeout(()=>setCalSyncing(false),2000); }} disabled={calSyncing}>
+                        <button className="sync-btn"
+                          onClick={() => handleSync(toSync)}
+                          disabled={calSyncing || !toSync.length}>
                           {calSyncing ? "Syncing…" : `Sync ${toSync.length} shows to Google Calendar`}
                         </button>
+                        {syncResult && (
+                          <div className={`sync-msg${syncResult.ok ? " ok" : " fail"}`}>
+                            {syncResult.ok ? "✓" : "✕"} {syncResult.msg}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -641,8 +858,29 @@ export default function App() {
                       <div><h3>Export Your Data</h3><p>Download your full anime list in your preferred format.</p></div>
                     </div>
                     <div className="exp-grid">
-                      {[["📊","CSV","Spreadsheet-compatible"],["{}","JSON","Developer-friendly"],["📆","iCal (.ics)","Calendar import"]].map(([icon,lbl,desc])=>(
-                        <div key={lbl} className="exp-item">
+                      {[
+                        ["📊","CSV","Spreadsheet-compatible", () => {
+                          const header = "Title,Status,Score,Genre,Studio,Year,Premiere,Episodes";
+                          const rows = shows.map(s => `"${s.title}","${s.status}",${s.score},"${s.genre}","${s.studio}",${s.year},"${s.premiereDate}",${s.episodes}`);
+                          const blob = new Blob([header + "\n" + rows.join("\n")], { type: "text/csv" });
+                          const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "animelens.csv"; a.click();
+                        }],
+                        ["{}","JSON","Developer-friendly", () => {
+                          const clean = shows.map(({ _raw, ...rest }) => rest);
+                          const blob = new Blob([JSON.stringify(clean, null, 2)], { type: "application/json" });
+                          const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "animelens.json"; a.click();
+                        }],
+                        ["📆","iCal (.ics)","Calendar import", () => {
+                          const events = shows.filter(s => s.premiereDate).map(s => {
+                            const dt = s.premiereDate.replace(/-/g, "");
+                            return `BEGIN:VEVENT\nDTSTART;VALUE=DATE:${dt}\nSUMMARY:${s.title}\nDESCRIPTION:${s.episodes} episodes - ${s.genre}\nEND:VEVENT`;
+                          });
+                          const ics = `BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//AnimeLens//EN\n${events.join("\n")}\nEND:VCALENDAR`;
+                          const blob = new Blob([ics], { type: "text/calendar" });
+                          const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "animelens.ics"; a.click();
+                        }]
+                      ].map(([icon,lbl,desc,fn])=>(
+                        <div key={lbl} className="exp-item" onClick={fn}>
                           <div className="exp-icon">{icon}</div>
                           <div className="exp-lbl">{lbl}</div>
                           <div className="exp-desc">{desc}</div>
@@ -655,7 +893,8 @@ export default function App() {
             )}
           </div>
 
-          {page !== "tools" && (
+          {/* ── SIDEBAR ── */}
+          {page !== "tools" && shows.length > 0 && (
             <aside className="sidebar">
               <div className="sb-title">Filter by Status</div>
               {Object.entries(STATUS).map(([key, cfg]) => (
@@ -667,11 +906,18 @@ export default function App() {
                 </label>
               ))}
               <div className="sb-sep" />
-              <div className="sb-tot"><strong>{filteredSorted.length}</strong> of {SHOWS.length} shown</div>
+              <div className="sb-tot"><strong>{filteredSorted.length}</strong> of {shows.length} shown</div>
             </aside>
           )}
         </div>
       </div>
+
+      {/* ── TOAST ── */}
+      {toast && (
+        <div className={`toast${toast.ok ? " ok" : " fail"}`}>
+          {toast.ok ? "✓" : "✕"} {toast.msg}
+        </div>
+      )}
     </>
   );
 }
