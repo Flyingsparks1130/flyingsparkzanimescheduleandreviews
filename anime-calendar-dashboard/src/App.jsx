@@ -233,7 +233,7 @@ body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;font
 @keyframes toastIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 
 /* TIMELINE */
-.tl-scroll{overflow-x:auto;padding:0 1.6rem 1.5rem}
+.tl-scroll{overflow-x:auto;overflow-y:hidden;white-space:nowrap;scroll-behavior:smooth;padding:0 1.6rem 1.5rem}
 .tl-slots{display:flex;min-width:max-content;position:relative}
 .tl-slots::after{content:'';position:absolute;top:calc(284px + 19px);left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent),var(--accent2));z-index:0;pointer-events:none}
 .tslot{width:208px;flex-shrink:0;display:flex;flex-direction:column}
@@ -384,6 +384,7 @@ export default function App() {
   const [coverStatus, setCoverStatus] = useState({});
   const [toast, setToast]             = useState(null);  // { ok, msg }
   const toastTimer = useRef(null);
+  const timelineRef = useRef(null);
 
   // ── Inject fonts ──
   useEffect(() => {
@@ -392,6 +393,36 @@ export default function App() {
     link.href = "https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Outfit:wght@300;400;500;600&display=swap";
     document.head.appendChild(link);
   }, []);
+
+  useEffect(() => {
+    const el = timelineRef.current;
+    if (!el) return undefined;
+
+    const onWheel = (e) => {
+      if (Math.abs(e.deltaY) > 0) {
+        e.preventDefault();
+        el.scrollLeft += e.deltaY;
+      }
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  useEffect(() => {
+    const el = timelineRef.current;
+    if (!el || !timelineItems.length) return;
+
+    const todayIndex = timelineItems.findIndex((item) => item.type === "today");
+    if (todayIndex === -1) return;
+
+    const targetLeft = Math.max(
+      0,
+      todayIndex * TIMELINE_SLOT_WIDTH - el.clientWidth / 2 + TIMELINE_SLOT_WIDTH / 2 + TODAY_MARKER_WIDTH / 2
+    );
+
+    el.scrollLeft = targetLeft;
+  }, [shows, timeFilter]);
 
   // ── Show toast helper ──
   const showToast = useCallback((ok, msg) => {
@@ -750,14 +781,14 @@ export default function App() {
                   <h1>My Anime Timeline</h1>
                   <p>{filteredSorted.length} shows · sorted by premiere date · scroll right →</p>
                 </div>
-                <div className="tl-scroll">
+                <div ref={timelineRef} className="tl-scroll">
                   <div className="tl-slots">
                     {timelineItems.map((item) => {
                       if (item.type === "today") return (
                         <div key="today" className="today-slot">
                           <div className="today-top"><div className="today-tag">Today</div></div>
                           <div className="today-conn">
-                            <div className="today-vlt" /><div className="today-cdot" /><div className="today-vlb" />
+                            <div className="today-vlt" /><div className="today-cdot" title={`Today • ${fmtFull(TODAY)}`} /><div className="today-vlb" />
                           </div>
                           <div className="today-btm" />
                         </div>
