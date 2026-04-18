@@ -746,6 +746,7 @@ export default function App() {
     const cfg = STATUS[show.status];
     const cover = getCover(show);
     return (
+      <button type="button" className="card-btn" onClick={() => setSelectedShow(show)} title={fmtFull(show.premiereDate)}>
       <div className="tcard" style={{ borderTop: isTop ? `2px solid ${cfg?.color}` : undefined, borderBottom: !isTop ? `2px solid ${cfg?.color}` : undefined }}>
         {cover && coverStatus[show.id] !== "error"
           ? <img
