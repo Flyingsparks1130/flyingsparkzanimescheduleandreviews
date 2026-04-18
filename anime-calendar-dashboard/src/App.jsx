@@ -87,6 +87,11 @@ function normalizeShow(raw, idx) {
   };
 }
 
+function getPreferredImageUrl(show) {
+  if (!show) return "";
+  return typeof show.image === "string" ? show.image.trim() : "";
+}
+
 function extractShows(apiData) {
   const arr = Array.isArray(apiData) ? apiData
     : Array.isArray(apiData?.items) ? apiData.items
@@ -400,28 +405,83 @@ export default function App() {
 
   useEffect(() => { loadShows(); }, [loadShows]);
 
-  // ── Fetch covers from Jikan (runs after shows load) ──
+  // ── Resolve cover state: use backend image first, then Jikan fallback ──
   useEffect(() => {
-    if (!shows.length) return;
+    if (!shows.length) {
+      setCovers({});
+      setCoverStatus({});
+      return;
+    }
+
     let cancelled = false;
+    const initialCovers = {};
+    const initialStatus = {};
+    const missing = [];
+
+    shows.forEach((show) => {
+      const backendImage = getPreferredImageUrl(show);
+      if (backendImage) {
+        initialCovers[show.id] = backendImage;
+        initialStatus[show.id] = "ready";
+      } else {
+        initialStatus[show.id] = "loading";
+        missing.push(show);
+      }
+    });
+
+    setCovers(initialCovers);
+    setCoverStatus(initialStatus);
+
     async function fetchBatch(batch) {
       const pairs = await Promise.all(batch.map(async (show) => {
         try {
           const r = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(show.title)}&limit=1&sfw=true`);
           const d = await r.json();
-          return [show.id, d.data?.[0]?.images?.jpg?.image_url ?? null];
-        } catch { return [show.id, null]; }
+          const imageUrl =
+            d.data?.[0]?.images?.jpg?.large_image_url ||
+            d.data?.[0]?.images?.jpg?.image_url ||
+            d.data?.[0]?.images?.webp?.large_image_url ||
+            d.data?.[0]?.images?.webp?.image_url ||
+            null;
+          return [show.id, imageUrl];
+        } catch {
+          return [show.id, null];
+        }
       }));
-      return Object.fromEntries(pairs.filter(([, v]) => v));
+      return pairs;
     }
+
     async function run() {
-      for (let i = 0; i < shows.length; i += 3) {
+      if (!missing.length) return;
+
+      for (let i = 0; i < missing.length; i += 3) {
         if (cancelled) return;
-        const partial = await fetchBatch(shows.slice(i, i + 3));
-        if (!cancelled) setCovers(prev => ({ ...prev, ...partial }));
-        if (i + 3 < shows.length && !cancelled) await new Promise(r => setTimeout(r, 1100));
+
+        const batchResults = await fetchBatch(missing.slice(i, i + 3));
+        if (cancelled) return;
+
+        setCovers((prev) => {
+          const next = { ...prev };
+          batchResults.forEach(([id, imageUrl]) => {
+            if (imageUrl) next[id] = imageUrl;
+          });
+          return next;
+        });
+
+        setCoverStatus((prev) => {
+          const next = { ...prev };
+          batchResults.forEach(([id, imageUrl]) => {
+            next[id] = imageUrl ? "ready" : "missing";
+          });
+          return next;
+        });
+
+        if (i + 3 < missing.length && !cancelled) {
+          await new Promise((r) => setTimeout(r, 1100));
+        }
       }
     }
+
     run();
     return () => { cancelled = true; };
   }, [shows]);
