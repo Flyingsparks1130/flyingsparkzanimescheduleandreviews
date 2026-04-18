@@ -737,7 +737,6 @@ export default function App() {
   /* ═══════════════════════════════════════════
      RENDER
      ═══════════════════════════════════════════ */
-  throw new Error("APP_STAGE_BEFORE_RETURN");
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
@@ -790,6 +789,7 @@ export default function App() {
 
             {/* ── TIMELINE ── */}
             {page === "timeline" && !dataLoading && shows.length > 0 && (
+              <>{(() => { throw new Error("APP_STAGE_TIMELINE_BRANCH"); })()}</>
               <div>
                 <div className="ph">
                   <h1>My Anime Timeline</h1>
