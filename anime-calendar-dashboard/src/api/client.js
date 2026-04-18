@@ -5,7 +5,7 @@ async function parseApiResponse(res, fallbackMessage) {
 
   let data;
   try {
-    data = JSON.parse(text);
+    data = text ? JSON.parse(text) : {};
   } catch (err) {
     throw new Error(`${fallbackMessage}: ${text || res.statusText}`);
   }
@@ -31,17 +31,14 @@ export async function fetchAnimeList(status = "", forceRefresh = false) {
   }
 
   if (forceRefresh) {
-    params.set("refresh", "true");
+    params.set("refresh", "1");
   }
 
-  const res = await fetch(`${API_BASE}?${params.toString()}`);
+  const res = await fetch(`${API_BASE}?${params.toString()}`, {
+    method: "GET"
+  });
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Failed to fetch anime list: ${text}`);
-  }
-
-  return res.json();
+  return parseApiResponse(res, "Failed to fetch anime list");
 }
 
 export async function fetchHealth() {
