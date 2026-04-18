@@ -21,16 +21,27 @@ async function parseApiResponse(res, fallbackMessage) {
   return data;
 }
 
-export async function fetchAnimeList(status = "") {
-  const url = status
-    ? `${API_BASE}?action=anime-list&status=${encodeURIComponent(status)}`
-    : `${API_BASE}?action=anime-list`;
-
-  const res = await fetch(url, {
-    method: "GET"
+export async function fetchAnimeList(status = "", forceRefresh = false) {
+  const params = new URLSearchParams({
+    action: "anime-list"
   });
 
-  return parseApiResponse(res, "Failed to fetch anime list");
+  if (status) {
+    params.set("status", status);
+  }
+
+  if (forceRefresh) {
+    params.set("refresh", "true");
+  }
+
+  const res = await fetch(`${API_BASE}?${params.toString()}`);
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to fetch anime list: ${text}`);
+  }
+
+  return res.json();
 }
 
 export async function fetchHealth() {
