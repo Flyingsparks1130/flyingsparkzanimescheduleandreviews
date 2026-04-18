@@ -51,12 +51,38 @@ export default function App() {
   const [lastRefresh, setLastRefresh] = useState("");
   const [lastSync, setLastSync] = useState("");
 
-  async function loadShows() {
+  function getSavedSelectionMap() {
+    try {
+      const raw = localStorage.getItem("animeSelectionState");
+      return raw ? JSON.parse(raw) : {};
+    } catch (err) {
+      console.error("Failed to parse saved selection state", err);
+      return {};
+    }
+  }
+
+  function saveSelectionMap(nextShows) {
+    try {
+      const selectionMap = nextShows.reduce((acc, show) => {
+        if (show.malId != null) {
+          acc[show.malId] = !!show.selected;
+        }
+        return acc;
+      }, {});
+
+      localStorage.setItem("animeSelectionState", JSON.stringify(selectionMap));
+    } catch (err) {
+      console.error("Failed to save selection state", err);
+    }
+  }
+
+  async function loadShows(forceRefresh = false) {
     setError("");
 
     try {
-      const data = await fetchAnimeList();
+      const data = await fetchAnimeList("", forceRefresh);
       const incoming = Array.isArray(data.items) ? data.items : [];
+      const savedSelectionMap = getSavedSelectionMap();
 
       const normalized = incoming.map((show, index) => ({
         id: show.malId || show.id || index + 1,
@@ -70,23 +96,46 @@ export default function App() {
         duration: show.duration || 24,
         status: show.status || "",
         score: show.score ?? 0,
-        selected: show.selected ?? false,
+        selected:
+          show.malId != null && savedSelectionMap[show.malId] !== undefined
+            ? savedSelectionMap[show.malId]
+            : show.selected ?? false,
         synced: show.synced ?? false,
         image: show.image || "https://placehold.co/640x360?text=Anime+Poster",
         confidence: show.confidence || "Imported from backend"
       }));
 
+      const now = new Date().toLocaleString();
+
       setShows(normalized);
-      setLastRefresh(new Date().toLocaleString());
+      setLastRefresh(now);
+
+      localStorage.setItem("animeListCache", JSON.stringify(normalized));
+      localStorage.setItem("animeListLastRefresh", now);
+      saveSelectionMap(normalized);
     } catch (err) {
       setError(err.message || "Failed to load anime");
     }
   }
 
   useEffect(() => {
+    const cachedShows = localStorage.getItem("animeListCache");
+    const cachedLastRefresh = localStorage.getItem("animeListLastRefresh");
+
+    if (cachedShows) {
+      try {
+        setShows(JSON.parse(cachedShows));
+        if (cachedLastRefresh) {
+          setLastRefresh(cachedLastRefresh);
+        }
+      } catch (err) {
+        console.error("Failed to parse cached anime list", err);
+      }
+    }
+
     async function init() {
       setLoading(true);
-      await loadShows();
+      await loadShows(false);
       setLoading(false);
     }
 
@@ -129,16 +178,19 @@ export default function App() {
   const queueCount = shows.filter((s) => s.selected && !s.synced).length;
 
   function toggleSelected(id) {
-    setShows((prev) =>
-      prev.map((show) =>
+    setShows((prev) => {
+      const next = prev.map((show) =>
         show.id === id ? { ...show, selected: !show.selected } : show
-      )
-    );
+      );
+      saveSelectionMap(next);
+      localStorage.setItem("animeListCache", JSON.stringify(next));
+      return next;
+    });
   }
 
   async function handleRefresh() {
     setRefreshing(true);
-    await loadShows();
+    await loadShows(true);
     setRefreshing(false);
   }
 
@@ -156,7 +208,7 @@ export default function App() {
     try {
       await syncSelectedShows(selectedShows);
       setLastSync(new Date().toLocaleString());
-      await loadShows();
+      await loadShows(false);
     } catch (err) {
       setError(err.message || "Failed to sync selected shows");
     } finally {
@@ -171,7 +223,7 @@ export default function App() {
     try {
       await syncSelectedShows([{ ...show, selected: true }]);
       setLastSync(new Date().toLocaleString());
-      await loadShows();
+      await loadShows(false);
     } catch (err) {
       setError(err.message || `Failed to sync ${show.title}`);
     } finally {
