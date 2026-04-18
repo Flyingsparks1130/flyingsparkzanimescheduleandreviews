@@ -76,7 +76,7 @@ function normalizeShow(raw, idx) {
   let year = Number(raw.year || raw.start_year || 0);
   if (!year && premiereDate) {
     const parsed = new Date(premiereDate);
-    if (!isNaN(parsed)) year = parsed.getFullYear();
+    if (!Number.isNaN(parsed.getTime())) year = parsed.getFullYear();
   }
 
   return {
@@ -422,21 +422,6 @@ export default function App() {
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
-  useEffect(() => {
-    const el = timelineRef.current;
-    if (!el || !timelineItems.length) return;
-
-    const todayIndex = timelineItems.findIndex((item) => item.type === "today");
-    if (todayIndex === -1) return;
-
-    const targetLeft = Math.max(
-      0,
-      todayIndex * TIMELINE_SLOT_WIDTH - el.clientWidth / 2 + TIMELINE_SLOT_WIDTH / 2 + TODAY_MARKER_WIDTH / 2
-    );
-
-    el.scrollLeft = targetLeft;
-  }, [timelineItems]);
-
   // ── Show toast helper ──
   const showToast = useCallback((ok, msg) => {
     setToast({ ok, msg });
@@ -603,6 +588,21 @@ export default function App() {
     }
     return items;
   }, [filteredSorted]);
+
+  useEffect(() => {
+    const el = timelineRef.current;
+    if (!el || !timelineItems.length) return;
+
+    const todayIndex = timelineItems.findIndex((item) => item.type === "today");
+    if (todayIndex === -1) return;
+
+    const targetLeft = Math.max(
+      0,
+      todayIndex * TIMELINE_SLOT_WIDTH - el.clientWidth / 2 + TIMELINE_SLOT_WIDTH / 2 + TODAY_MARKER_WIDTH / 2
+    );
+
+    el.scrollLeft = targetLeft;
+  }, [timelineItems]);
 
   const scoredShows = useMemo(() =>
     shows.filter(s => s.score > 0 && statusFilter.has(s.status)), [statusFilter, shows]
