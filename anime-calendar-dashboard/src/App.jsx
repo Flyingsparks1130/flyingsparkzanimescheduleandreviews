@@ -81,7 +81,21 @@ function normalizeShow(raw, idx) {
 
   return {
     id: raw.id || raw.mal_id || raw.anime_id || idx + 1,
-    title, status, score, genre, studio, year, premiereDate, episodes: eps,
+    title,
+    status,
+    score,
+    genre,
+    studio,
+    year,
+    premiereDate,
+    episodes: eps,
+    image:
+      raw.image ||
+      raw.image_url ||
+      raw.main_picture?.large ||
+      raw.main_picture?.medium ||
+      raw.anime_image ||
+      "",
     // preserve raw object for sync payload
     _raw: raw
   };
@@ -367,6 +381,7 @@ export default function App() {
   const [calSyncing, setCalSyncing]   = useState(false);
   const [syncResult, setSyncResult]   = useState(null); // { ok, msg }
   const [covers, setCovers]           = useState({});
+  const [coverStatus, setCoverStatus] = useState({});
   const [toast, setToast]             = useState(null);  // { ok, msg }
   const toastTimer = useRef(null);
 
@@ -602,10 +617,23 @@ export default function App() {
     const cover = getCover(show);
     return (
       <div className="tcard" style={{ borderTop: isTop ? `2px solid ${cfg?.color}` : undefined, borderBottom: !isTop ? `2px solid ${cfg?.color}` : undefined }}>
-        {cover
-          ? <img className="tcard-img" src={cover} alt={show.title} loading="lazy" />
-          : <div className="tcard-img-ph" style={{ background: coverPh(show) }}>
+        {cover && coverStatus[show.id] !== "error"
+          ? <img
+              className="tcard-img"
+              src={cover}
+              alt={show.title}
+              loading="lazy"
+              onError={() => setCoverStatus((prev) => ({ ...prev, [show.id]: "error" }))}
+            />
+          : <div className="tcard-img-ph" style={{ background: coverPh(show), display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", gap:"6px", padding:"12px", textAlign:"center" }}>
               <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:"2rem", color:cfg?.color, opacity:.22 }}>{show.title[0]}</span>
+              <span style={{ fontSize:"0.78rem", color:"var(--text2)" }}>
+                {coverStatus[show.id] === "loading"
+                  ? "Loading image…"
+                  : coverStatus[show.id] === "error"
+                  ? "Image failed to load"
+                  : "No image found"}
+              </span>
             </div>
         }
         <div className="tcard-body">
