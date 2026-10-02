@@ -81,3 +81,10 @@ function reconcileMalCalendar_(calendar, shows, props) {
   props.setProperty("MAL_AUTO_SYNC_CURSOR", "0");
   return result;
 }
+
+// Run once in the editor after approving deployment; does not itself write calendar events.
+function enableAutomaticSync() {
+  PropertiesService.getScriptProperties().setProperty("MAL_AUTO_SYNC_ENABLED", "true");
+  console.log("Automatic sync enabled. Install one 15-minute trigger for scheduledMalSync.");
+}
+
