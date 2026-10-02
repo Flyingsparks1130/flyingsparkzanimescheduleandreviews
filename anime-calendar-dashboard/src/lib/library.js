@@ -73,13 +73,15 @@ export function normalizeShow(raw, index) {
   const anime = raw.node || raw.anime || raw;
   const list = raw.list_status || anime.my_list_status || raw;
   const malId = number(raw.malId || anime.mal_id || anime.id || raw.anime_id);
-  const premiereDate = exactDate(
+  const startDate = String(
     raw.premiereDate ||
       raw.premiere_date ||
       anime.start_date ||
       raw.anime_start_date ||
-      anime.aired?.from,
+      anime.aired?.from ||
+      "",
   );
+  const premiereDate = exactDate(startDate);
   const title = String(
     anime.title || raw.anime_title || raw.name || "Untitled",
   );
@@ -111,9 +113,10 @@ export function normalizeShow(raw, index) {
       anime.year ||
         anime.start_season?.year ||
         raw.start_year ||
-        premiereDate.slice(0, 4),
+        startDate.slice(0, 4),
     ),
     premiereDate,
+    startDate,
     broadcast,
     season:
       typeof raw.season === "string"
