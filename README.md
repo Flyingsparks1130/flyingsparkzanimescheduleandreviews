@@ -46,3 +46,13 @@ Expected API contract:
 | Failure | `{ "ok": false, "error": "..." }` |
 
 The frontend never needs the MAL client secret, access token, or refresh token. Episode events are weekly estimates based on premiere/broadcast fields, not a verified episode-release feed. Calendar lookup covers the show's estimated run plus one week on each side; moving a premiere by more than that can require manually reviewing old events. Large initial calendar syncs remain subject to Google's execution and calendar quotas. No live calendar writes are used for testing.
+
+## Automatic MAL mirroring (activation pending approval)
+
+The website preserves every MAL status, including dropped shows, and replaces its list on each successful refresh so removed entries disappear. An open, visible dashboard checks the backend every minute and refreshes on returning to the tab. Its data can be up to one backend cache interval old; failed requests retain the last successful copy and display an error.
+
+`scheduledMalSync` is designed for an Apps Script time-driven trigger every 15 minutes. It fetches every MAL page before changing any calendar event. Dropped or absent shows lose their integration-managed events (including historic events); completed and on-hold shows retain events. Ratings, progress, and status are mirrored in event descriptions. Only events containing both an exact integration sync key and matching MAL ID are managed; unrelated events are preserved. The reconciliation scans managed events between 1900 and 2200, including dates moved outside their former series window.
+
+Each run changes at most 100 events and stops processing after a three-minute budget; large imports or removals resume on later runs. API and Calendar quotas may delay completion. Episode dates remain weekly estimates. New events require a known positive episode count and exact premiere date; unknown schedules are not invented. Existing events can still receive updated metadata when the current schedule is unknown.
+
+Release gate: merge/deploy the frontend and update the Apps Script source/version first, then set `MAL_AUTO_SYNC_ENABLED` to `true` in Script Properties and create one 15-minute time-driven trigger for `scheduledMalSync` under the owning Google account. No trigger is created by saving source or loading the website, and there is no public HTTP route to activate this job. Set the property to `false` and remove the trigger to stop automatic writes. `MAL_AUTO_SYNC_LAST_RESULT` records the last completed run's counts; failed trigger executions appear in Apps Script Executions. Trigger activation, the initial calendar reconciliation, and production deployment remain pending explicit release approval.

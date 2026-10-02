@@ -54,5 +54,16 @@ export function useLibrary() {
       sequence.current++;
     };
   }, [cached, load]);
+  useEffect(() => {
+    const refreshVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    const timer = window.setInterval(refreshVisible, 60 * 1000);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshVisible);
+    };
+  }, [load]);
   return { shows, loading, error, updatedAt, cacheWarning, refresh: load };
 }

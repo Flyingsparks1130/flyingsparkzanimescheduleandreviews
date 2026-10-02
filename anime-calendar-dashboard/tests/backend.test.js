@@ -86,6 +86,7 @@ function backend() {
     "MalAuthService",
     "MalService",
     "CalendarService",
+    "AutoSync",
   ])
     vm.runInContext(
       fs.readFileSync(
@@ -301,4 +302,142 @@ test("JST weekly dates remain stable over daylight-saving changes", () => {
     () => context.buildPremiereDateTime_({ ...show, broadcast: "99:99" }),
     /broadcast/,
   );
+});
+
+function fakeCalendar() {
+  const events = [];
+  const calendar = {
+    getEvents: () => events.filter((e) => !e.deleted),
+    createEvent(title, start, end, options) {
+      const event = {
+        deleted: false,
+        getTitle: () => title,
+        getStartTime: () => start,
+        getEndTime: () => end,
+        getDescription: () => options.description,
+        setTitle: (value) => {
+          title = value;
+        },
+        setTime: (a, b) => {
+          start = a;
+          end = b;
+        },
+        setDescription: (value) => {
+          options.description = value;
+        },
+        deleteEvent: () => {
+          event.deleted = true;
+        },
+      };
+      events.push(event);
+      return event;
+    },
+  };
+  return { calendar, events };
+}
+const syncShow = (malId, status = "watching", extra = {}) => ({
+  malId,
+  title: "Show " + malId,
+  status,
+  premiereDate: "2026-10-02",
+  episodes: 1,
+  duration: 24,
+  score: 0,
+  numEpisodesWatched: 0,
+  ...extra,
+});
+
+test("automatic sync mirrors scores/progress, retains completed/held, removes only dropped or absent managed events", () => {
+  const { context } = backend();
+  const { calendar, events } = fakeCalendar();
+  const props = context.PropertiesService.getScriptProperties();
+  const shows = [1, 2, 3, 4, 5].map((id) => syncShow(id));
+  context.reconcileMalCalendar_(calendar, shows, props);
+  calendar.createEvent("Personal event", new Date(), new Date(), {
+    description: "anime-sync:99:ep:1",
+  });
+  const next = [
+    syncShow(1, "completed", { score: 9, numEpisodesWatched: 1 }),
+    syncShow(2, "on_hold"),
+    syncShow(3, "dropped"),
+    syncShow(5, "plan_to_watch"),
+  ];
+  const result = context.reconcileMalCalendar_(calendar, next, props);
+  assert.equal(result.deleted, 2);
+  assert.equal(events[2].deleted, true);
+  assert.equal(events[3].deleted, true);
+  assert.equal(events[5].deleted, false);
+  assert.match(events[0].getDescription(), /Score: 9/);
+  assert.match(events[0].getDescription(), /Episodes watched: 1/);
+  assert.match(events[1].getDescription(), /Status: on_hold/);
+  const again = context.reconcileMalCalendar_(calendar, next, props);
+  assert.equal(again.created + again.updated + again.deleted, 0);
+});
+
+test("scheduled sync is disabled by default and never deletes on incomplete or failed MAL fetch", () => {
+  const { context, properties } = backend();
+  assert.equal(context.scheduledMalSync().enabled, false);
+  properties.set("MAL_AUTO_SYNC_ENABLED", "true");
+  context.fetchCurrentUserAnimeList_ = () => {
+    throw Error("page two failed");
+  };
+  assert.throws(() => context.scheduledMalSync(), /page two failed/);
+  context.fetchCurrentUserAnimeList_ = () => [{ node: { id: 1 } }];
+  assert.throws(() => context.scheduledMalSync(), /Incomplete MAL snapshot/);
+});
+
+test("large imports resume without duplicates; unknown episode counts do not invent events", () => {
+  const { context } = backend();
+  const { calendar, events } = fakeCalendar();
+  const props = context.PropertiesService.getScriptProperties();
+  const shows = [
+    syncShow(1, "watching", { episodes: 105 }),
+    syncShow(2, "watching", { episodes: 0 }),
+  ];
+  const first = context.reconcileMalCalendar_(calendar, shows, props);
+  assert.equal(first.created, 100);
+  assert.equal(first.pending, true);
+  const second = context.reconcileMalCalendar_(calendar, shows, props);
+  assert.equal(second.created, 5);
+  assert.equal(second.pending, false);
+  assert.equal(events.length, 105);
+  assert.equal(
+    context.reconcileMalCalendar_(calendar, shows, props).created,
+    0,
+  );
+  assert.throws(
+    () => context.reconcileMalCalendar_(calendar, [shows[0], shows[0]], props),
+    /Invalid MAL snapshot/,
+  );
+});
+
+test("an explicitly empty complete MAL list removes all managed events, never unrelated events", () => {
+  const { context } = backend();
+  const { calendar, events } = fakeCalendar();
+  const props = context.PropertiesService.getScriptProperties();
+  context.reconcileMalCalendar_(calendar, [syncShow(1)], props);
+  calendar.createEvent("Unrelated", new Date(), new Date(), {
+    description: "MAL ID: 2",
+  });
+  assert.equal(context.reconcileMalCalendar_(calendar, [], props).deleted, 1);
+  assert.equal(events[1].deleted, false);
+});
+
+test("manual queue cannot recreate a removed or dropped show from stale browser data", () => {
+  const { context } = backend();
+  const { calendar, events } = fakeCalendar();
+  context.getAnimeList_ = () => [
+    syncShow(1, "dropped"),
+    syncShow(3, "completed", { score: 8 }),
+  ];
+  context.CalendarApp.getCalendarById = () => calendar;
+  const result = context.syncSelectedShows_([
+    syncShow(1, "watching", { selected: true }),
+    syncShow(2, "watching", { selected: true }),
+    syncShow(3, "watching", { selected: true }),
+  ]);
+  assert.equal(result.totalShows, 1);
+  assert.equal(events.length, 1);
+  assert.match(events[0].getDescription(), /Status: completed/);
+  assert.match(events[0].getDescription(), /Score: 8/);
 });
