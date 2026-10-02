@@ -71,7 +71,7 @@ function imageUrl(value) {
 }
 export function normalizeShow(raw, index) {
   const anime = raw.node || raw.anime || raw;
-  const list = raw.list_status || raw;
+  const list = raw.list_status || anime.my_list_status || raw;
   const malId = number(raw.malId || anime.mal_id || anime.id || raw.anime_id);
   const premiereDate = exactDate(
     raw.premiereDate ||
@@ -129,7 +129,9 @@ export function normalizeShow(raw, index) {
             ? anime.average_episode_duration / 60
             : 0),
       ) || 24,
-    watched: number(list.num_episodes_watched || raw.watched),
+    watched: number(
+      list.num_episodes_watched || raw.numEpisodesWatched || raw.watched,
+    ),
     image: imageUrl(
       raw.image ||
         raw.image_url ||
@@ -140,7 +142,7 @@ export function normalizeShow(raw, index) {
         raw.anime_image,
     ),
     synopsis: String(anime.synopsis || anime.background || ""),
-    type: String(anime.media_type || anime.type || ""),
+    type: String(anime.media_type || raw.mediaType || anime.type || ""),
     searchText:
       `${title} ${titleJp} ${genre} ${studio} ${status}`.toLowerCase(),
     _raw: raw,

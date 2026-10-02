@@ -25,11 +25,15 @@ Set `VITE_API_BASE` in `.env.local` to override the existing Apps Script web-app
 - Calendar selections persist independently of filters. Only watching/planned entries with an ID and valid premiere date can be queued. Payloads include `selected: true` and normalized `malId` values. Results show the backend's created/updated/skipped counts when supplied.
 - CSV exports escape spreadsheet formulas and quotes. iCalendar exports contain all-day premiere events, not inferred weekly broadcasts.
 
-## Apps Script integration: source mismatch
+## Apps Script integration
 
-The existing deployed frontend uses `anime-list`, `auth-url`, and `sync-selected`. The checked-in `backend/apps-script` snapshot only implements `health`, `planned-upcoming`, and `sync-selected` using Jikan. **It is not the current production backend. Do not overwrite the live project with that snapshot.**
+`backend/apps-script` now contains the current MAL-based backend, recovered from the live project and updated alongside this dashboard. It replaces the obsolete Jikan snapshot. Credentials and the original hard-coded setup function are deliberately excluded.
 
-On October 2, 2026, a read-only call to the configured deployed endpoint returned `MAL request failed (401): invalid_token`. The live editor also contains `MalAuthService.gs` and `MalService.gs`, which are missing here. The current Apps Script source and renewed MAL authorization are required to finish end-to-end integration testing.
+The backend refreshes expired tokens, retries a 401 once, preserves existing script properties, validates OAuth state, and obtains the full library in pages of up to 1,000 records. Compressed cache chunks stay below Apps Script's per-entry limit, expire after 15 minutes, and safely refetch if any chunk is evicted. Loading the library performs no Calendar API reads. Calendar sync indexes existing events once per series and skips unchanged writes.
+
+Required script properties: `MAL_CLIENT_ID`, `MAL_CLIENT_SECRET`, `MAL_REDIRECT_URI`, and `CALENDAR_ID`. Authorization maintains `MAL_ACCESS_TOKEN`, `MAL_REFRESH_TOKEN`, and `MAL_TOKEN_EXPIRES_AT`. Set configuration through Project Settings, never in committed source. `checkMalConnection` renews/checks the saved connection without calendar writes; `checkLibraryPerformance` warms the cache and logs only counts and durations.
+
+Saving source in Apps Script does not change an existing versioned `/exec` deployment. Publish a new version of the existing deployment to activate the fixes while preserving its URL. The existing public web-app access configuration is unchanged by this work.
 
 Expected API contract:
 
@@ -41,4 +45,4 @@ Expected API contract:
 | `POST` text/plain JSON `{ action: "sync-selected", shows: [...] }` | `{ "ok": true, "result": { "created": 0, "updated": 0, "skipped": 0 } }` |
 | Failure | `{ "ok": false, "error": "..." }` |
 
-The frontend never needs the MAL client secret, access token, or refresh token. Keep those in Apps Script properties. Once the current source is available, inspect automatic token refresh, list caching/pagination, returned image fields, and calendar event lookup/idempotency before deploying backend changes. Episode times produced by the existing backend are estimates based on premiere/broadcast fields.
+The frontend never needs the MAL client secret, access token, or refresh token. Episode events are weekly estimates based on premiere/broadcast fields, not a verified episode-release feed. Calendar lookup covers the show's estimated run plus one week on each side; moving a premiere by more than that can require manually reviewing old events. Large initial calendar syncs remain subject to Google's execution and calendar quotas. No live calendar writes are used for testing.
