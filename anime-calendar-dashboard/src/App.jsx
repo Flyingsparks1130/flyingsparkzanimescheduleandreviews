@@ -23,6 +23,12 @@ import { readStored, writeStored } from "./lib/storage.js";
 import { download, toCsv, toIcs } from "./lib/export.js";
 import ShowCard, { Cover, StatusBadge } from "./components/ShowCard.jsx";
 import ShowDetails from "./components/ShowDetails.jsx";
+import EpisodeSchedule from "./components/EpisodeSchedule.jsx";
+import {
+  buildSchedule,
+  filterSchedule,
+  SCHEDULE_STATUSES,
+} from "./lib/schedule.js";
 const Analytics = lazy(() => import("./components/Analytics.jsx"));
 const PAGE_SIZE = 24;
 const PAGES = {
@@ -34,7 +40,7 @@ const PAGES = {
   schedule: [
     "Schedule",
     "A little anticipation.",
-    "Premiere dates from your library, together in one place.",
+    "Today and ahead: episodes to look forward to, with release windows as dates are announced.",
   ],
   analytics: [
     "Insights",
@@ -62,6 +68,10 @@ export default function App() {
   const deferredQuery = useDeferredValue(query);
   const [status, setStatus] = useState("all");
   const [date, setDate] = useState("all");
+  const [scheduleStatus, setScheduleStatus] = useState("all");
+  const [scheduleDate, setScheduleDate] = useState("all");
+  const activeStatus = page === "schedule" ? scheduleStatus : status;
+  const activeDate = page === "schedule" ? scheduleDate : date;
   const [sort, setSort] = useState("title");
   const [pageNumber, setPageNumber] = useState(1);
   const [queue, setQueue] = useState(initialQueue);
@@ -72,7 +82,32 @@ export default function App() {
   const [auth, setAuth] = useState({ loading: false, url: "", error: "" });
   const syncInFlight = useRef(false);
   const resultsHeading = useRef(null);
-  const today = localDay();
+  const [today, setToday] = useState(localDay);
+  useEffect(() => {
+    const tick = () => setToday(localDay());
+    const timer = window.setInterval(tick, 30000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, []);
+  const scheduleEntries = useMemo(
+    () => buildSchedule(shows, today),
+    [shows, today],
+  );
+  const scheduleCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        ["all", ...SCHEDULE_STATUSES].map((key) => [
+          key,
+          scheduleEntries.filter(
+            (entry) => key === "all" || entry.show.status === key,
+          ).length,
+        ]),
+      ),
+    [scheduleEntries],
+  );
   const counts = useMemo(() => {
     const result = Object.fromEntries(
       Object.keys(STATUS).map((key) => [key, 0]),
@@ -93,17 +128,38 @@ export default function App() {
   );
   const filtered = useMemo(
     () =>
-      filterShows(
-        shows,
-        {
-          query: deferredQuery,
-          status,
-          date,
-          sort: page === "schedule" ? "oldest" : sort,
-        },
-        today,
-      ),
-    [shows, deferredQuery, status, date, sort, page, today],
+      page === "schedule"
+        ? filterSchedule(
+            scheduleEntries,
+            {
+              query: deferredQuery,
+              status: scheduleStatus,
+              date: scheduleDate,
+            },
+            today,
+          )
+        : filterShows(
+            shows,
+            {
+              query: deferredQuery,
+              status,
+              date,
+              sort: page === "schedule" ? "oldest" : sort,
+            },
+            today,
+          ),
+    [
+      shows,
+      deferredQuery,
+      status,
+      date,
+      sort,
+      page,
+      today,
+      scheduleEntries,
+      scheduleStatus,
+      scheduleDate,
+    ],
   );
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(pageNumber, pages);
@@ -113,7 +169,7 @@ export default function App() {
   );
   useEffect(() => {
     setPageNumber(1);
-  }, [deferredQuery, status, date, sort, page]);
+  }, [deferredQuery, status, date, sort, page, scheduleStatus, scheduleDate]);
   useEffect(() => {
     setQueueWarning(!writeStored("queue", [...queue]));
   }, [queue]);
@@ -135,6 +191,8 @@ export default function App() {
     setQuery("");
     setStatus("all");
     setDate("all");
+    setScheduleStatus("all");
+    setScheduleDate("all");
   }
   async function reconnect() {
     setAuth({ loading: true, url: "", error: "" });
@@ -382,7 +440,11 @@ export default function App() {
                       <button
                         className={`overview-stat${status === key ? " chosen" : ""}`}
                         key={key}
-                        onClick={() => setStatus(key)}
+                        onClick={() =>
+                          (page === "schedule" ? setScheduleStatus : setStatus)(
+                            key,
+                          )
+                        }
                       >
                         <span>{label}</span>
                         <strong>{value.toLocaleString()}</strong>
@@ -423,12 +485,12 @@ export default function App() {
                       <h2 ref={resultsHeading} tabIndex={-1}>
                         {page === "library"
                           ? "All your stories"
-                          : "Premiere schedule"}
+                          : "Upcoming episodes & releases"}
                         <span className="count-pill">{filtered.length}</span>
                       </h2>
                       <span>
                         {page === "schedule"
-                          ? "Premieres, not weekly episode airings"
+                          ? "Weekly estimates · Dates shown in your local time"
                           : "A collection that's uniquely yours"}
                       </span>
                     </div>
@@ -447,10 +509,18 @@ export default function App() {
                         <span>Dates</span>
                         <select
                           aria-label="Filter by date"
-                          value={date}
-                          onChange={(event) => setDate(event.target.value)}
+                          value={activeDate}
+                          onChange={(event) =>
+                            (page === "schedule" ? setScheduleDate : setDate)(
+                              event.target.value,
+                            )
+                          }
                         >
-                          <option value="all">All dates</option>
+                          <option value="all">
+                            {page === "schedule"
+                              ? "Today & ahead"
+                              : "All dates"}
+                          </option>
                           <option value="upcoming">Upcoming</option>
                           <option value="month">This month</option>
                           <option value="unknown">Date TBA</option>
@@ -477,13 +547,25 @@ export default function App() {
                       aria-label="Filter by watch status"
                     >
                       {[
-                        ["all", { label: "All shows" }],
-                        ...Object.entries(STATUS),
+                        [
+                          "all",
+                          {
+                            label:
+                              page === "schedule"
+                                ? "All upcoming"
+                                : "All shows",
+                          },
+                        ],
+                        ...Object.entries(STATUS).filter(
+                          ([key]) =>
+                            page !== "schedule" ||
+                            SCHEDULE_STATUSES.includes(key),
+                        ),
                       ].map(([key, meta]) => (
                         <button
                           key={key}
-                          aria-pressed={status === key}
-                          className={status === key ? "selected" : ""}
+                          aria-pressed={activeStatus === key}
+                          className={activeStatus === key ? "selected" : ""}
                           onClick={() => setStatus(key)}
                         >
                           {key !== "all" && (
@@ -491,7 +573,11 @@ export default function App() {
                           )}
                           {meta.label}
                           <span>
-                            {key === "all" ? shows.length : counts[key]}
+                            {page === "schedule"
+                              ? scheduleCounts[key]
+                              : key === "all"
+                                ? shows.length
+                                : counts[key]}
                           </span>
                         </button>
                       ))}
@@ -525,68 +611,7 @@ export default function App() {
                           ))}
                         </div>
                       ) : (
-                        <div className="schedule-list">
-                          {visible.map((show, index) => (
-                            <div key={show.id}>
-                              {(index === 0 ||
-                                visible[index - 1].premiereDate.slice(0, 7) !==
-                                  show.premiereDate.slice(0, 7)) && (
-                                <h3 className="month-heading">
-                                  {show.premiereDate
-                                    ? new Date(
-                                        `${show.premiereDate}T12:00:00`,
-                                      ).toLocaleDateString(undefined, {
-                                        month: "long",
-                                        year: "numeric",
-                                      })
-                                    : "To be announced"}
-                                </h3>
-                              )}
-                              <div className="schedule-row">
-                                <div className="schedule-date">
-                                  <strong>
-                                    {show.premiereDate
-                                      ? show.premiereDate.slice(8)
-                                      : "—"}
-                                  </strong>
-                                  <span>
-                                    {show.premiereDate
-                                      ? new Date(
-                                          `${show.premiereDate}T12:00:00`,
-                                        ).toLocaleDateString(undefined, {
-                                          weekday: "short",
-                                        })
-                                      : "TBA"}
-                                  </span>
-                                </div>
-                                <Cover show={show} />
-                                <button
-                                  className="schedule-title"
-                                  onClick={() => openShow(show)}
-                                >
-                                  {show.title}
-                                  <small>
-                                    {show.broadcast ||
-                                      "Broadcast time not announced"}
-                                  </small>
-                                </button>
-                                <StatusBadge status={show.status} />
-                                {canSync(show) && (
-                                  <button
-                                    className="secondary"
-                                    disabled={syncing}
-                                    aria-label={`${queue.has(show.id) ? "Remove" : "Queue"} ${show.title}`}
-                                    onClick={() => toggleQueue(show.id)}
-                                  >
-                                    {queue.has(show.id)
-                                      ? "Queued ✓"
-                                      : "+ Queue"}
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                        <EpisodeSchedule entries={visible} onOpen={openShow} />
                       )}
                       <div className="pagination">
                         <span>
